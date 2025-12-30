@@ -165,7 +165,7 @@ fmt.Printf("Array length: %v\n", len(names))
 - A list that is more dynamic in size
 
 - Slice
-    - Slice is an abstraction of an Arrya
+    - Slice is an abstraction of an Array
     - Slices are more flexible and powerful: variable-length or get and sub-array of its own
     - Slice are also index-based and have a size , but is resized when needed
 
@@ -255,7 +255,7 @@ for{
         fmt.Println("Forloop ends here")
         break
     }
-}
+} 
 ```
 
 - same syntax as others language
