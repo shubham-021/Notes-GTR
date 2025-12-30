@@ -1,0 +1,112 @@
+---
+title: Zod and Runtime Validation
+description: Type inference and runtime validation with Zod
+---
+
+# Zod and Runtime Validation
+
+Zod is a TypeScript-first schema validation library that provides automatic type inference.
+
+## Basic Usage
+
+```typescript
+import { z } from "zod";
+
+// Define a schema
+const UserSchema = z.object({
+    name: z.string(),
+    age: z.number().min(0).max(120),
+    email: z.string().email()
+});
+
+// Infer the TypeScript type from the schema
+type User = z.infer<typeof UserSchema>;
+// Equivalent to: { name: string; age: number; email: string }
+
+// Validate data at runtime
+const result = UserSchema.safeParse({
+    name: "John",
+    age: 25,
+    email: "john@example.com"
+});
+
+if (result.success) {
+    console.log(result.data);  // Type-safe User object
+} else {
+    console.log(result.error.issues);
+}
+```
+
+## Common Zod Patterns
+
+```typescript
+import { z } from "zod";
+
+// Optional fields
+const UserSchema = z.object({
+    name: z.string(),
+    nickname: z.string().optional()
+});
+
+// Default values
+const ConfigSchema = z.object({
+    timeout: z.number().default(5000)
+});
+
+// Union types
+const IdSchema = z.union([z.string(), z.number()]);
+
+// Arrays
+const TagsSchema = z.array(z.string());
+
+// Enums
+const RoleSchema = z.enum(["admin", "user", "guest"]);
+
+// Transform data
+const DateSchema = z.string().transform((str) => new Date(str));
+
+// Refine with custom validation
+const PasswordSchema = z.string().refine(
+    (val) => val.length >= 8,
+    { message: "Password must be at least 8 characters" }
+);
+```
+
+## API Validation Example
+
+```typescript
+import { z } from "zod";
+import express from "express";
+
+const CreateUserSchema = z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    age: z.number().int().positive()
+});
+
+app.post("/users", (req, res) => {
+    const result = CreateUserSchema.safeParse(req.body);
+
+    if (!result.success) {
+        return res.status(400).json({ errors: result.error.issues });
+    }
+
+    // result.data is fully typed as { name: string; email: string; age: number }
+    const user = createUser(result.data);
+    res.json(user);
+});
+```
+
+## Why Zod?
+
+- **Single source of truth**: Define schema once, get both runtime validation and TypeScript types
+- **Type inference**: No need to manually write matching TypeScript interfaces
+- **Rich validation**: Built-in validators for emails, URLs, UUIDs, etc.
+- **Composable**: Build complex schemas from simple ones
+
+## Additional Resources
+
+- [Official TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/)
+- [TypeScript Playground](https://www.typescriptlang.org/play)
+- [Zod Documentation](https://zod.dev/)
+- [TypeScript Deep Dive](https://basarat.gitbook.io/typescript/)

@@ -1,0 +1,32 @@
+---
+title: Getting Started
+description: Setting up TypeScript with npm and configuring your project
+---
+
+# Getting Started with TypeScript
+
+## Project Setup
+
+```bash
+npm init -y
+npm install typescript
+npx tsc --init
+```
+
+This creates a `tsconfig.json` file with TypeScript configuration.
+
+## Configuring tsconfig.json
+
+After initialization, configure key options:
+
+- Set `rootDir` to your source directory (e.g., `"./src"`)
+- Set `outDir` to your output directory (e.g., `"./dist"`)
+
+## Compiling TypeScript
+
+```bash
+tsc -b          # Build the project
+tsc --watch     # Watch mode for development
+```
+
+TypeScript compiles `.ts` files to `.js` files that can run anywhere JavaScript runs.

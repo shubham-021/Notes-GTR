@@ -1,0 +1,187 @@
+---
+title: Maps and Structs
+description: Key-value pairs with maps and custom data types with structs
+---
+
+# Maps and Structs
+
+## Maps
+
+Maps are key-value pairs, similar to dictionaries in other languages.
+
+### Creating a Map
+
+```go
+var variableName = make(map[key_data_type]value_data_type)
+```
+
+### Example
+
+```go
+var userData = make(map[string]string)
+
+userData["firstName"] = "Shubham"
+userData["lastName"] = "Singh"
+userData["email"] = "shubham@example.com"
+```
+
+The `make` function is used to initialize maps, slices, and channels in Go.
+
+## Struct Data Type
+
+Structs let you group related data together with different types:
+
+```go
+struct {
+    firstName string
+    lastName  string
+    email     string
+    age       uint
+}
+```
+
+## Custom Types with `type`
+
+The `type` keyword creates a new type with the name you specify:
+
+```go
+type UserData struct {
+    firstName       string
+    lastName        string
+    emailAddress    string
+    numberOfTickets uint
+}
+```
+
+You can also create types based on other data types:
+
+```go
+type Age int
+type Email string
+```
+
+## Using Structs
+
+### Creating Instances
+
+```go
+var userData = UserData{
+    firstName:       "Shubham",
+    lastName:        "Singh",
+    emailAddress:    "shubham@example.com",
+    numberOfTickets: 2,
+}
+```
+
+### Accessing Fields
+
+```go
+fmt.Println(userData.firstName)
+fmt.Println(userData.emailAddress)
+```
+
+## Complete Example: Booking Application
+
+Here's a practical example showing structs in action:
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+const conferenceTickets = 50
+
+var conferenceName = "Go conference"
+var remainingTickets uint = 50
+var bookings = make([]UserData, 0)
+
+type UserData struct {
+    firstName       string
+    lastName        string
+    emailAddress    string
+    numberOfTickets uint
+}
+
+func main() {
+    greetUser()
+
+    for {
+        firstName, lastName, emailAddress, userTickets := getUserInput()
+        isValidName, isValidEmail, isValidTicketNumber := validateUserInput(
+            firstName, lastName, emailAddress, userTickets)
+
+        if isValidName && isValidEmail && isValidTicketNumber {
+            bookTicket(userTickets, firstName, lastName, emailAddress)
+            go sendTicket(userTickets, firstName, lastName, emailAddress)
+
+            firstNames := getFirstNames()
+            fmt.Printf("The first names of bookings are: %v\n", firstNames)
+
+            if remainingTickets == 0 {
+                fmt.Println("Our conference is booked out. Come back next year")
+                break
+            }
+        } else {
+            if !isValidName {
+                fmt.Println("First name or last name is too short")
+            }
+            if !isValidEmail {
+                fmt.Println("Email address is invalid")
+            }
+            if !isValidTicketNumber {
+                fmt.Println("Number of tickets is invalid")
+            }
+        }
+    }
+}
+
+func greetUser() {
+    fmt.Printf("Welcome to %v booking application\n", conferenceName)
+    fmt.Printf("We have total of %v tickets and %v are still available.\n", 
+        conferenceTickets, remainingTickets)
+    fmt.Println("Get your tickets here to attend")
+}
+
+func getFirstNames() []string {
+    firstNames := []string{}
+
+    for _, booking := range bookings {
+        firstNames = append(firstNames, booking.firstName)
+    }
+
+    return firstNames
+}
+
+func bookTicket(userTickets uint, firstName string, lastName string, emailAddress string) {
+    remainingTickets = remainingTickets - userTickets
+
+    var userData = UserData{
+        firstName:       firstName,
+        lastName:        lastName,
+        emailAddress:    emailAddress,
+        numberOfTickets: userTickets,
+    }
+
+    bookings = append(bookings, userData)
+
+    fmt.Printf("Thank you %v %v for booking %v tickets. You will receive a confirmation at %v\n", 
+        firstName, lastName, userTickets, emailAddress)
+    fmt.Printf("%v tickets remaining for %v\n", remainingTickets, conferenceName)
+}
+
+func sendTicket(userTickets uint, firstName string, lastName string, emailAddress string) {
+    time.Sleep(10 * time.Second)
+    var ticket = fmt.Sprintf("%v tickets for %v %v", userTickets, firstName, lastName)
+    fmt.Printf("\nSending ticket %v \nto email address %v\n", ticket, emailAddress)
+}
+```
+
+This example demonstrates:
+- Package level variables and constants
+- Custom struct type for user data
+- Slice of structs for storing bookings
+- Functions that work with structs
+- Go routines for async operations (covered in the concurrency section)

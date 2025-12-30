@@ -1,0 +1,94 @@
+---
+title: Records and Maps
+description: Working with key-value collections in TypeScript
+---
+
+# Records and Maps
+
+## Record Type
+
+A cleaner way to define object types with string keys:
+
+```typescript
+type UserInfo = {
+    username: string;
+    id: number;
+};
+
+// Instead of using index signatures
+type UsersOld = {
+    [key: string]: UserInfo;
+};
+
+// Use Record for cleaner syntax
+type Users = Record<string, UserInfo>;
+
+const users: Users = {
+    user1: { username: "john", id: 21 },
+    user2: { username: "jane", id: 22 }
+};
+```
+
+## Record with Specific Keys
+
+```typescript
+type Role = "admin" | "user" | "guest";
+
+type Permissions = Record<Role, string[]>;
+
+const permissions: Permissions = {
+    admin: ["read", "write", "delete"],
+    user: ["read", "write"],
+    guest: ["read"]
+};
+```
+
+This ensures you have entries for all roles.
+
+## Map Object
+
+JavaScript's Map with TypeScript typing:
+
+```typescript
+type User = {
+    userName: string;
+    id: number;
+};
+
+const allUsers = new Map<string, User>();
+
+allUsers.set("user1", { userName: "abc", id: 22 });
+allUsers.set("user2", { userName: "xyz", id: 23 });
+
+const user = allUsers.get("user1");  // User | undefined
+allUsers.delete("user1");
+console.log(allUsers.has("user1"));  // false
+```
+
+## When to Use Record vs Map
+
+| Feature | Record | Map |
+|---------|--------|-----|
+| Compile-time type | Yes | Yes |
+| Iteration order | Not guaranteed | Insertion order |
+| Key types | string, number, symbol | Any type |
+| Serialization | JSON.stringify works | Requires conversion |
+| Performance | Better for small objects | Better for frequent add/delete |
+
+## Practical Example
+
+```typescript
+// API response mapping
+type ApiEndpoints = "users" | "posts" | "comments";
+
+type EndpointConfig = Record<ApiEndpoints, {
+    url: string;
+    method: "GET" | "POST";
+}>;
+
+const endpoints: EndpointConfig = {
+    users: { url: "/api/users", method: "GET" },
+    posts: { url: "/api/posts", method: "GET" },
+    comments: { url: "/api/comments", method: "POST" }
+};
+```

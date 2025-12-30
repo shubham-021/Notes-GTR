@@ -1,0 +1,112 @@
+---
+title: Interfaces
+description: Defining object shapes with interfaces in TypeScript
+---
+
+# Interfaces
+
+Interfaces define the shape of objects. They are one of the most powerful features in TypeScript.
+
+## Basic Interface
+
+```typescript
+interface User {
+    username: string;
+    id: number;
+    email?: string;  // Optional property (marked with ?)
+}
+
+const user1: User = {
+    username: "shubh",
+    id: 3232
+};
+
+const user2: User = {
+    username: "Shubham",
+    id: 2323,
+    email: "shubham@example.com"
+};
+
+console.log(user1.username);
+console.log(user2.email);
+```
+
+## Readonly Properties
+
+Prevent modification of properties after initialization:
+
+```typescript
+interface Config {
+    readonly apiKey: string;
+    readonly baseUrl: string;
+}
+
+const config: Config = {
+    apiKey: "abc123",
+    baseUrl: "https://api.example.com"
+};
+
+// config.apiKey = "new-key";  // Error: Cannot assign to 'apiKey'
+```
+
+## Function Types in Interfaces
+
+There are two syntaxes for defining function types:
+
+```typescript
+interface Handler {
+    // Method syntax
+    greet(phrase: string): void;
+
+    // Property syntax (function as a property)
+    onClick: (event: string) => void;
+}
+```
+
+The difference:
+- `greet(phrase: string): void` - Method syntax, defines a method
+- `onClick: (event: string) => void` - Property syntax, defines a function property
+
+## Extending Interfaces
+
+Interfaces can extend one or more interfaces:
+
+```typescript
+interface User {
+    userName: string;
+    phone: number;
+}
+
+interface Student {
+    id: number;
+    name: string;
+}
+
+interface Person extends User, Student {
+    title: string;
+}
+
+// Person now has all properties from User, Student, and its own
+const student1: Person = {
+    userName: "Sh7bham",
+    phone: 8776867,
+    id: 7,
+    name: "Shubham",
+    title: "Developer"
+};
+```
+
+## Index Signatures
+
+When you don't know all property names ahead of time:
+
+```typescript
+interface StringDictionary {
+    [key: string]: string;
+}
+
+const headers: StringDictionary = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer token"
+};
+```

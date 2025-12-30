@@ -1,0 +1,95 @@
+---
+title: Error Handling
+description: Recoverable errors with Result and unrecoverable errors with panic
+---
+
+# Error Handling
+
+Rust groups errors into two categories: recoverable and unrecoverable.
+
+## Unrecoverable Errors with panic!
+
+```rust
+fn main() {
+    panic!("crash and burn");  // Program terminates immediately
+}
+```
+
+Use `panic!` when your program reaches an unrecoverable state.
+
+## Recoverable Errors with Result
+
+```rust
+use std::fs::File;
+use std::io::{self, Read};
+
+fn main() {
+    let file_result = File::open("hello.txt");
+
+    let file = match file_result {
+        Ok(file) => file,
+        Err(error) => {
+            println!("Error opening file: {:?}", error);
+            return;
+        }
+    };
+}
+```
+
+## The Result Enum
+
+```rust
+enum Result<T, E> {
+    Ok(T),   // Success case with value of type T
+    Err(E),  // Error case with error of type E
+}
+```
+
+## Propagating Errors
+
+Use `?` to propagate errors to the calling function:
+
+```rust
+use std::fs::File;
+use std::io::{self, Read};
+
+fn read_username_from_file() -> Result<String, io::Error> {
+    let mut file = File::open("hello.txt")?;  // ? propagates error
+    let mut username = String::new();
+    file.read_to_string(&mut username)?;
+    Ok(username)
+}
+
+// Chained version
+fn read_username_short() -> Result<String, io::Error> {
+    let mut username = String::new();
+    File::open("hello.txt")?.read_to_string(&mut username)?;
+    Ok(username)
+}
+
+// Shortest version
+fn read_username_shortest() -> Result<String, io::Error> {
+    std::fs::read_to_string("hello.txt")
+}
+```
+
+The `?` operator:
+- Returns the value inside `Ok` if successful
+- Returns early with the `Err` if there's an error
+
+## unwrap and expect
+
+Shortcuts that panic on error:
+
+```rust
+// unwrap: panics if Err
+let file = File::open("hello.txt").unwrap();
+
+// expect: panics with custom message
+let file = File::open("hello.txt").expect("Failed to open hello.txt");
+```
+
+Use these for:
+- Prototyping
+- Examples
+- Cases where you know the operation won't fail

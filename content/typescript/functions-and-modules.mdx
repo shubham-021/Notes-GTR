@@ -1,0 +1,115 @@
+---
+title: Functions and Modules
+description: Callback functions, modules, and exports in TypeScript
+---
+
+# Functions and Modules
+
+## Typing Callback Parameters
+
+```typescript
+function callingAnother(fn: (c: number) => void, c: number): void {
+    setTimeout(() => {
+        fn(c);
+    }, 2000);
+}
+
+function callThis(c: number): void {
+    console.log(c + 1);
+}
+
+callingAnother(callThis, 2);
+```
+
+## Complex Callback Types
+
+```typescript
+// Function that takes a callback with multiple parameters
+function doSomething(cb: (str: string, num: number) => string): string {
+    const result = cb("hello", 42);
+    return result;
+}
+
+// Callback as return type
+type AsyncCallback<T> = (error: Error | null, result: T | null) => void;
+
+function fetchData(callback: AsyncCallback<string>): void {
+    // Simulated async operation
+    setTimeout(() => {
+        callback(null, "data");
+    }, 1000);
+}
+```
+
+## Named Exports
+
+```typescript
+// utils.ts
+export function add(a: number, b: number): number {
+    return a + b;
+}
+
+export const PI = 3.14159;
+
+export interface User {
+    name: string;
+}
+```
+
+## Default Exports
+
+```typescript
+// logger.ts
+export default class Logger {
+    log(message: string): void {
+        console.log(message);
+    }
+}
+```
+
+## Importing
+
+```typescript
+// Named imports
+import { add, PI, User } from "./utils";
+
+// Default import
+import Logger from "./logger";
+
+// Mixed
+import Logger, { add } from "./module";
+
+// Rename imports
+import { add as sum } from "./utils";
+
+// Import entire module
+import * as Utils from "./utils";
+Utils.add(1, 2);
+```
+
+## Re-exporting (Barrel Files)
+
+```typescript
+// index.ts - barrel file
+export { add, PI } from "./utils";
+export { default as Logger } from "./logger";
+export * from "./types";
+```
+
+Barrel files simplify imports by providing a single entry point for a module.
+
+## Function Type Syntax
+
+```typescript
+// Arrow function type
+type Greet = (name: string) => string;
+
+// Function type with void return
+type Logger = (message: string) => void;
+
+// Optional parameters
+type OptionalGreet = (name: string, greeting?: string) => string;
+
+// Rest parameters
+type Sum = (...numbers: number[]) => number;
+```

@@ -1,0 +1,72 @@
+---
+title: Getting Started
+description: Introduction to Go programming - modules, packages, and your first program
+---
+
+# Getting Started with Go
+
+## Module Initialization
+
+Every Go project starts with a module. Initialize one with:
+
+```bash
+go mod init <module-path>
+```
+
+This creates a `go.mod` file that describes your module with its name and the Go version used.
+
+## Understanding Packages
+
+In Go, everything is organized into packages. All your code must belong to a package.
+
+Every source file must start with a package declaration. Think of a package as a folder or container that groups related code together.
+
+```go
+package main
+```
+
+The `package main` is special because it tells the Go compiler:
+- This is not just a library
+- This is a program that should be turned into an executable file
+
+## The Entry Point
+
+Go needs to know where to start executing code. This is always the `main` function in the `main` package:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello world")
+}
+```
+
+## Importing Packages
+
+Everything comes from a package. Helper functions like `Println` come from the `fmt` package.
+
+- Go programs are organized into packages
+- Go's standard library provides different core packages
+- `fmt` is one of these, which you can use by importing it
+- Check out all packages on the [official documentation](https://pkg.go.dev/std)
+
+## Two Types of Packages
+
+1. **Library Packages**: Collections of code intended to be reused by other programs (like `fmt` or `math`). They don't run on their own.
+
+2. **The Main Package**: The entry point. When you run `go build`, the compiler looks specifically for `package main` to know where the "start button" is.
+
+## Running Your Code
+
+```bash
+# Run a single file
+go run main.go
+
+# Run all files in the current package
+go run .
+
+# Build an executable
+go build
+```

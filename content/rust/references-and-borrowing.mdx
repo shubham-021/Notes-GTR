@@ -1,0 +1,93 @@
+---
+title: References and Borrowing
+description: Borrowing values without taking ownership using references
+---
+
+# References and Borrowing
+
+References allow you to refer to a value without taking ownership.
+
+## Immutable References
+
+```rust
+fn main() {
+    let s = String::from("hello");
+    let len = get_length(&s);  // Borrow s
+    println!("Length of '{}' is {}", s, len);  // s is still valid
+}
+
+fn get_length(s: &String) -> usize {
+    s.len()
+}  // s goes out of scope but nothing is dropped (we don't own it)
+```
+
+The `&` creates a reference that borrows the value.
+
+## Mutable References
+
+```rust
+fn main() {
+    let mut s = String::from("hello");
+    change(&mut s);
+    println!("{}", s);  // Output: hello world
+}
+
+fn change(s: &mut String) {
+    s.push_str(" world");
+}
+```
+
+## Borrowing Rules
+
+1. You can have either **one mutable reference** OR **any number of immutable references**
+2. References must always be valid (no dangling references)
+
+```rust
+fn main() {
+    let mut s = String::from("hello");
+
+    let r1 = &s;     // OK
+    let r2 = &s;     // OK - multiple immutable references
+    println!("{} and {}", r1, r2);
+
+    let r3 = &mut s; // OK - r1 and r2 are no longer used
+    println!("{}", r3);
+}
+```
+
+## String Slices
+
+Slices let you reference a portion of a string:
+
+```rust
+fn main() {
+    let s = String::from("hello world");
+
+    let hello: &str = &s[0..5];   // "hello"
+    let world: &str = &s[6..11];  // "world"
+
+    // Shorthand
+    let hello = &s[..5];   // From beginning
+    let world = &s[6..];   // To end
+    let whole = &s[..];    // Entire string
+}
+
+fn first_word(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    for (i, &item) in bytes.iter().enumerate() {
+        if item == b' ' {
+            return &s[..i];
+        }
+    }
+    &s[..]
+}
+```
+
+## Summary
+
+| Syntax | Meaning |
+|--------|---------|
+| `&T` | Immutable reference to T |
+| `&mut T` | Mutable reference to T |
+| `&s[..]` | Slice of entire string |
+| `&s[0..5]` | Slice from index 0 to 4 |

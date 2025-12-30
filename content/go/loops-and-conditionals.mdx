@@ -1,0 +1,156 @@
+---
+title: Loops and Conditionals
+description: Control flow with for loops, if statements, and switch in Go
+---
+
+# Loops and Conditionals
+
+## For Loop
+
+Go has only one loop construct: the `for` loop. But it's versatile enough to cover all use cases.
+
+### Infinite Loop
+
+```go
+for {
+    // runs forever
+}
+```
+
+### Conditional Loop (like while)
+
+```go
+var size = 10
+var i = 0
+
+for i <= size {
+    // runs while condition is true
+    i++
+}
+```
+
+### Traditional For Loop
+
+```go
+for i := 0; i < 10; i++ {
+    fmt.Println(i)
+}
+```
+
+### For-Each with Range
+
+`range` iterates over elements for different data structures:
+
+```go
+fullNames := []string{}
+fullNames = append(fullNames, "Shubham Singh")
+fullNames = append(fullNames, "Motu Tiwari")
+fullNames = append(fullNames, "Chhapri Patel")
+
+firstNames := []string{}
+
+// for index, variable := range list
+for _, fullName := range fullNames {
+    var names = strings.Fields(fullName)
+    firstNames = append(firstNames, names[0])
+}
+
+fmt.Printf("The first names are: %v\n", firstNames)
+```
+
+Key points about `range`:
+- For arrays and slices, `range` provides the index and value for each element
+- Use the blank identifier `_` to ignore values you don't need
+- Go requires you to make unused variables explicit
+
+### strings.Fields()
+
+Splits a string using whitespace as the separator and returns a slice:
+
+```go
+// "Shubham Singh" --> ["Shubham", "Singh"]
+names := strings.Fields("Shubham Singh")
+```
+
+## Conditional Statements
+
+### If Statement
+
+```go
+var i = 0
+
+for {
+    if i == 10 {
+        fmt.Println("Loop ends here")
+        break
+    }
+    i++
+}
+```
+
+### If-Else
+
+```go
+if isValidName && isValidEmail && isValidTicketNumber {
+    bookTicket(userTickets, firstName, lastName, emailAddress)
+} else {
+    if !isValidName {
+        fmt.Println("First name or last name is too short")
+    }
+    if !isValidEmail {
+        fmt.Println("Email address is invalid")
+    }
+    if !isValidTicketNumber {
+        fmt.Println("Number of tickets is invalid")
+    }
+}
+```
+
+### Control Flow Keywords
+
+- `break` - Exit the loop entirely
+- `continue` - Skip to the next iteration
+
+## Switch Statement
+
+Allows a variable to be tested for equality against a list of values:
+
+```go
+city := "London"
+
+switch city {
+    case "New York":
+        // code for New York
+    case "Singapore":
+        // code for Singapore
+    case "Mexico":
+        // code for Mexico
+    case "London", "Berlin":
+        // code for London or Berlin
+    default:
+        fmt.Println("No valid city selected")
+}
+```
+
+You can match multiple values in a single case by separating them with commas.
+
+## Utility Functions
+
+### len()
+
+Built-in function that returns length based on type:
+- Arrays and slices: Size of the list
+- Strings: Number of characters
+
+```go
+len(names)      // slice length
+len("Shubham")  // string length: 7
+```
+
+### strings.Contains()
+
+Checks if a string contains a substring:
+
+```go
+strings.Contains(emailAddress, "@")  // true if email contains @
+```

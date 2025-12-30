@@ -1,0 +1,64 @@
+---
+title: Variables and Mutability
+description: Immutability by default, mutable variables, constants, and shadowing in Rust
+---
+
+# Variables and Mutability
+
+By default, variables in Rust are immutable. This is a key safety feature.
+
+## Immutable Variables
+
+```rust
+fn main() {
+    let x = 5;
+    // x = 6;  // Error: cannot assign twice to immutable variable
+    println!("{}", x);
+}
+```
+
+## Mutable Variables
+
+Use `mut` to make a variable mutable:
+
+```rust
+fn main() {
+    let mut x = 5;
+    println!("x = {}", x);
+    x = 6;  // This is allowed
+    println!("x = {}", x);
+}
+```
+
+## Constants
+
+Constants are always immutable and must have a type annotation:
+
+```rust
+const MAX_POINTS: u32 = 100_000;
+const PI: f64 = 3.14159;
+```
+
+Note: Use `SCREAMING_SNAKE_CASE` for constant names.
+
+## Shadowing
+
+You can declare a new variable with the same name, which shadows the previous one:
+
+```rust
+fn main() {
+    let x = 5;
+    let x = x + 1;      // Shadows previous x
+    let x = x * 2;      // Shadows again
+    println!("{}", x);  // Output: 12
+
+    // Shadowing allows type changes
+    let spaces = "   ";
+    let spaces = spaces.len();  // Now an integer
+}
+```
+
+Shadowing is different from `mut` because:
+- We create a new variable each time
+- We can change the type
+- The variable remains immutable after each `let`
