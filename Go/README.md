@@ -293,3 +293,156 @@ for {
 
 - strings.Contains(variable_name,"what we need to check for")
     - checks if the variable contains the second arg
+
+---
+
+## Switch Statements
+
+- Allows a variable to be tested for equality against a list of values
+
+```go
+    city := "London"
+
+    switch city {
+        case "New York:
+            // code for the case
+        case "Singapore":
+            // code for the case
+        case "Mexico":
+            // code for the case
+        case "London","Berlin":
+            // code for the case
+        default:
+            fmt.Println("No valid city selected")
+    }
+```
+
+---
+
+## Package level variables
+
+- When some variable is being used by many functions it doesnt make sense to define or pass them function to function , again and again , it would be userful if we can declare them once and use anywhere they are needed
+- Define them as package level variables
+
+- Package level variables are defined at the top outside all functions
+- They must be declared using `var`
+
+---
+
+## Packages in Go
+
+- Scope: Package level
+    - Variables and Functions defined outside any function, can be accessed in all other files within the same package
+
+- if we are using different files for the same package , we can not run the package only doing ```go run main.go``` 
+- we have to provide all the files associated with the package , like if we have two file main.go and helper.go , we need to run ```go run main.go helper.go```
+
+- we can not provide all the file names to run the package if we had many
+- instead we can give the current files location to run those , ```go run .```
+
+### Multiple packages
+
+- different package files should be seperated in different folders
+- to export any function, variable in Go , just Capitalize its first letter
+- to import we cant just state the package name is the import list , we have to import wrt to module-name , like , booking-app/helper
+
+### Scope 
+
+- 3 level of scope
+    - Local
+        - Declaration within function : Can be used only within that function
+        - Declaration within block : Can be used only within that block
+    - Package
+        - Declaration outside all function : Can be used everywhere in the same package
+    - Global
+        - Declaration outside all functions & uppercase first letter : Can be used everywhere across all packages
+
+- Variable Scope : Scope is the region of a program , where a defined variable can be accessed
+
+---
+
+## Maps
+
+```go
+var variableName = make(map[key_data_type]value_data_type)
+```
+
+- make ??
+
+## Struct Data Type
+
+```go
+struct {
+    firstName string
+    lastName string
+    email string
+    age uint
+}
+```
+
+### "type" statement - Custom types
+
+- The type keyword creates a new type , with the name you specify
+- In fact , you could also create a type based on every other data type like int,string,etc.
+
+```go
+type UserDate struct {
+    firstName string
+    lastName string
+    email string
+    age uint
+}
+```
+
+---
+
+## Concurrency
+
+- Go Routines
+    - "go" keyword
+        - "go ..." starts a new go routine
+        - A go routine is a lightweight thread managed by the Go runtime
+
+- Synchronizing Go routines
+    - main thread doesnt wait for other threads to complete , it terminates as soon as it completed its job
+    - we need to tell the main thread about other running threads
+    - Waitgroup
+        - Waits for the launched go routines to finish
+        - Package "sync" provides basic synchronization
+        - Add: Sets the number of go routines to wait for (increases the counter by the provided number)
+        - Wait: Blocks until the WaitGroup counter is 0
+        - Done: Decrements the WaitGroup counter by 1 , so this is called by the go routine to indicate that its finished
+
+    ```go
+        var wg = sync.WaitGroup{}
+
+        // above the go routines
+        wg.Add(1) // 1 is the number of routines to wait for
+
+        // add this at the end of main thread function
+        wg.Wait()
+
+        // add this inside the routine function at the end
+        wg.Done()
+    ```
+
+---
+
+# What GO does different or better than other languages ?
+- Go is using , Whats called "Green Thread"
+- Abstraction of actual thread
+- Managed by the go routine , we are only interacting with these high level go routines
+- Cheaper and lighter
+- You can run hundreds of thousands or millions go routines without affecting the performance
+- Channels: Built in functionality for go routines to talk to each other
+
+- OS threads
+    - managed by kernels
+    - are hardware dependent
+    - cost of these threads are higher
+    - higher start up time
+    - No easy commincation between threads
+
+# Important Points
+
+- A Go function can return multiple values
