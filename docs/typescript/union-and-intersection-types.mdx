@@ -1,0 +1,94 @@
+---
+title: Union and Intersection Types
+description: Combining types with unions and intersections
+---
+
+## Union Types
+
+A value can be one of several types:
+
+```typescript
+// Inline union
+function greet(id: number | string): string {
+    return `ID: ${id}`;
+}
+
+greet(1);       // Valid
+greet("abc");   // Valid
+
+// Named union type
+type GreetArg = number | string | boolean;
+
+function greetV2(id: GreetArg): GreetArg {
+    return id;
+}
+```
+
+## Narrowing Union Types
+
+When working with unions, TypeScript requires you to narrow the type before using type-specific methods:
+
+```typescript
+function printId(id: number | string): void {
+    if (typeof id === "string") {
+        console.log(id.toUpperCase());  // TypeScript knows id is string here
+    } else {
+        console.log(id.toFixed(2));     // TypeScript knows id is number here
+    }
+}
+```
+
+## Intersection Types
+
+Combine multiple types into one:
+
+```typescript
+type Employee = {
+    name: string;
+    startDate: Date;
+};
+
+interface Manager {
+    name: string;
+    department: string;
+}
+
+type TeamLead = Employee & Manager;
+// TeamLead has: name, startDate, and department
+
+const teamLead: TeamLead = {
+    name: "Shubham",
+    department: "IT",
+    startDate: new Date()
+};
+```
+
+## Discriminated Unions
+
+A pattern for working with unions that share a common property:
+
+```typescript
+type Success = { status: "success"; data: string };
+type Error = { status: "error"; message: string };
+type Response = Success | Error;
+
+function handleResponse(response: Response): void {
+    switch (response.status) {
+        case "success":
+            console.log(response.data);     // TypeScript knows this is Success
+            break;
+        case "error":
+            console.log(response.message);  // TypeScript knows this is Error
+            break;
+    }
+}
+```
+
+The `status` property acts as a discriminant that TypeScript uses to narrow the type.
+
+## Summary
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `\|` | Union (OR) | `string \| number` |
+| `&` | Intersection (AND) | `User & Admin` |

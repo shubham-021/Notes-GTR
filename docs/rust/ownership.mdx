@@ -1,0 +1,75 @@
+---
+title: Ownership
+description: Rust's unique ownership system for memory safety without garbage collection
+---
+
+Ownership is Rust's most unique feature. It enables memory safety without garbage collection.
+
+## Ownership Rules
+
+1. Each value in Rust has an owner
+2. There can only be one owner at a time
+3. When the owner goes out of scope, the value is dropped
+
+## Move Semantics
+
+```rust
+fn main() {
+    let s1 = String::from("hello");
+    let s2 = s1;  // s1 is moved to s2
+
+    // println!("{}", s1);  // Error: s1 is no longer valid
+    println!("{}", s2);     // This works
+}
+```
+
+When you assign `s1` to `s2`, the ownership moves. `s1` is no longer valid.
+
+## Ownership with Functions
+
+```rust
+fn main() {
+    let s = String::from("hello");
+    takes_ownership(s);     // s is moved into the function
+
+    // println!("{}", s);   // Error: s is no longer valid
+
+    let x = 5;
+    makes_copy(x);          // i32 implements Copy, so x is still valid
+    println!("{}", x);      // This works
+}
+
+fn takes_ownership(some_string: String) {
+    println!("{}", some_string);
+}  // some_string is dropped here
+
+fn makes_copy(some_integer: i32) {
+    println!("{}", some_integer);
+}
+```
+
+## Returning Ownership
+
+```rust
+fn main() {
+    let s1 = gives_ownership();
+    let s2 = String::from("hello");
+    let s3 = takes_and_gives_back(s2);
+}
+
+fn gives_ownership() -> String {
+    String::from("yours")
+}
+
+fn takes_and_gives_back(s: String) -> String {
+    s  // Returned and moved to caller
+}
+
+// Returning multiple values with tuple
+fn get_length(s: String) -> (String, usize) {
+    let length = s.len();
+    (s, length)
+}
+```
+
+Returning values transfers ownership back to the caller.

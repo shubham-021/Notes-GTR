@@ -1,0 +1,46 @@
+---
+title: Getting Started
+description: Setting up Rust, creating projects with Cargo, and your first program
+---
+
+## Installation
+
+Install Rust using rustup:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+## Creating a Project
+
+```bash
+# Create a new project
+cargo new project_name
+cd project_name
+
+# Build and run
+cargo build           # Compile the project
+cargo run             # Build and run
+cargo check           # Check for errors without building
+cargo build --release # Build with optimizations
+```
+
+## Project Structure
+
+```
+project_name/
+├── Cargo.toml    # Project manifest (dependencies, metadata)
+├── Cargo.lock    # Exact dependency versions
+└── src/
+    └── main.rs   # Entry point
+```
+
+## Hello World
+
+```rust
+fn main() {
+    println!("Hello, World!");
+}
+```
+
+The `println!` macro prints text to the console. Note the `!` - this indicates it's a macro, not a regular function.

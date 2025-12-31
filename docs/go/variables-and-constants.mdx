@@ -1,0 +1,89 @@
+---
+title: Variables and Constants
+description: Variable declaration, short syntax, constants, and printing in Go
+---
+
+## Variable Declaration
+
+There are two ways to declare variables in Go:
+
+```go
+// Standard declaration
+var camelCase = "something"
+
+// Short declaration (walrus operator)
+camelCase := "something"
+```
+
+## Standard Declaration vs Short Declaration
+
+### `var variableName = "something"`
+
+The formal way to declare a variable:
+
+- **Scope**: Can be used anywhere (inside a function or at the package level outside functions)
+- **Type Inference**: Since you assigned a value, Go knows it's a string. You could also be explicit: `var variableName string = "something"`
+- **Zero Values**: This is the only way to declare a variable without giving it a value immediately (e.g., `var name string`), which defaults to an empty string `""`
+
+### `name := "something"`
+
+The shorthand (or "Walrus operator") way to declare and initialize:
+
+- **Scope**: Can only be used inside a function. Using this at the top of your file (package level) will cause a compilation error
+- **Implicit**: Declares the variable, detects the type, and assigns the value all in one motion
+- **Redeclaration**: Often used to quickly grab multiple return values from a function, like `val, err := someFunction()`
+
+### When to Use Which?
+
+Use `:=` whenever possible inside functions. It makes code cleaner, shorter, and easier to read. Most Go developers use this for 90% of their local variables.
+
+Use `var` when:
+- You need a package-level variable (outside `func main`)
+- You want to declare a variable now but assign it later
+- You want to be explicit about the type (e.g., `var price float64 = 10` instead of the default `int`)
+
+## Constants
+
+Use `const` to create variables that cannot be modified:
+
+```go
+const name = "Shubham"
+name = "Singh" // Error: cannot assign to name
+
+fmt.Println(name)
+```
+
+## Printing in Go
+
+```go
+var name = "Shubham"
+fmt.Println("My name is", name)
+```
+
+### Formatted Printing
+
+`Printf` takes a template string with annotation verbs (placeholders):
+
+```go
+fmt.Printf("Some text with a variable %s", myVariable)
+
+// Printing types
+var name = "Shubham"
+var age = 23
+
+fmt.Printf("name is %T, age is %T", name, age) // %T prints the type
+```
+
+Common format verbs:
+- `%s` - string
+- `%d` - integer
+- `%f` - float
+- `%v` - default format for any value
+- `%T` - type of the value
+- `%t` - boolean
+
+## Compiler Enforcement
+
+Go enforces better code quality at compile time:
+- Variable names must be used (unused variables cause errors)
+- Imported packages must be used (unused imports cause errors)

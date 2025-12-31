@@ -1,0 +1,118 @@
+---
+title: Common Collections
+description: Vectors, HashMaps, and Strings - Rust's built-in collection types
+---
+
+## Vectors
+
+```rust
+fn main() {
+    // Create
+    let mut v: Vec<i32> = Vec::new();
+    let v2 = vec![1, 2, 3];
+
+    // Add elements
+    v.push(1);
+    v.push(2);
+    v.push(3);
+
+    // Access elements
+    let third = &v[2];       // Panics if out of bounds
+    let third = v.get(2);    // Returns Option<&T>
+
+    // Iterate
+    for i in &v {
+        println!("{}", i);
+    }
+
+    // Iterate and mutate
+    for i in &mut v {
+        *i += 10;
+    }
+
+    // Remove
+    let last = v.pop();  // Returns Option<T>
+}
+```
+
+## Hash Maps
+
+```rust
+use std::collections::HashMap;
+
+fn main() {
+    let mut scores = HashMap::new();
+
+    // Insert
+    scores.insert(String::from("Blue"), 10);
+    scores.insert(String::from("Yellow"), 50);
+
+    // Access
+    let team_name = String::from("Blue");
+    let score = scores.get(&team_name);  // Returns Option<&V>
+
+    // Iterate
+    for (key, value) in &scores {
+        println!("{}: {}", key, value);
+    }
+
+    // Insert only if key doesn't exist
+    scores.entry(String::from("Red")).or_insert(25);
+
+    // Update based on old value
+    let text = "hello world wonderful world";
+    let mut word_count = HashMap::new();
+    for word in text.split_whitespace() {
+        let count = word_count.entry(word).or_insert(0);
+        *count += 1;
+    }
+}
+```
+
+## Strings
+
+```rust
+fn main() {
+    // Create
+    let mut s = String::new();
+    let s = "initial contents".to_string();
+    let s = String::from("initial contents");
+
+    // Concatenate
+    let s1 = String::from("Hello, ");
+    let s2 = String::from("world!");
+    let s3 = s1 + &s2;  // s1 is moved, s2 is borrowed
+
+    // format! macro (doesn't take ownership)
+    let s1 = String::from("tic");
+    let s2 = String::from("tac");
+    let s3 = String::from("toe");
+    let s = format!("{}-{}-{}", s1, s2, s3);
+
+    // Iterate over characters
+    for c in "hello".chars() {
+        println!("{}", c);
+    }
+
+    // Iterate over bytes
+    for b in "hello".bytes() {
+        println!("{}", b);
+    }
+}
+```
+
+## Collection Comparison
+
+| Collection | Use Case | Key Properties |
+|------------|----------|----------------|
+| Vec<T> | Ordered list | Index access, push/pop |
+| HashMap<K, V> | Key-value pairs | Fast lookup by key |
+| String | Text | UTF-8 encoded, growable |
+
+## Additional Resources
+
+- [The Rust Programming Language Book](https://doc.rust-lang.org/book/)
+- [Rust by Example](https://doc.rust-lang.org/rust-by-example/)
+- [Rustlings Exercises](https://github.com/rust-lang/rustlings)
+- [Rust Standard Library Docs](https://doc.rust-lang.org/std/)
+- [Rust Playground](https://play.rust-lang.org/)

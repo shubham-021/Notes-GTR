@@ -1,0 +1,119 @@
+---
+title: Enums and Pattern Matching
+description: Defining variants with enums and exhaustive matching with match
+---
+
+Enums define a type by enumerating its possible variants.
+
+## Basic Enums
+
+```rust
+enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+fn main() {
+    let dir = Direction::North;
+    move_player(dir);
+}
+
+fn move_player(dir: Direction) {
+    match dir {
+        Direction::North => println!("Moving north"),
+        Direction::South => println!("Moving south"),
+        Direction::East => println!("Moving east"),
+        Direction::West => println!("Moving west"),
+    }
+}
+```
+
+## Enums with Data
+
+Each variant can hold different types and amounts of data:
+
+```rust
+enum Message {
+    Quit,                       // No data
+    Move { x: i32, y: i32 },    // Named fields
+    Write(String),              // Single value
+    ChangeColor(i32, i32, i32), // Multiple values
+}
+
+enum Shape {
+    Circle(f32),           // radius
+    Square(f32),           // side
+    Rectangle(f32, f32),   // width, height
+}
+```
+
+## Pattern Matching with match
+
+```rust
+use std::f32::consts::PI;
+
+enum Shape {
+    Circle(f32),
+    Square(f32),
+    Rectangle(f32, f32),
+}
+
+impl Shape {
+    fn area(&self) -> f32 {
+        match self {
+            Shape::Circle(r) => PI * r * r,
+            Shape::Square(side) => side * side,
+            Shape::Rectangle(w, h) => w * h,
+        }
+    }
+}
+
+fn main() {
+    let circle = Shape::Circle(10.0);
+    println!("Area: {}", circle.area());
+}
+```
+
+## Catch-All Pattern
+
+Use `_` to match any remaining cases:
+
+```rust
+fn get_direction(dir: Direction) {
+    match dir {
+        Direction::North => println!("North"),
+        Direction::South => println!("South"),
+        _ => println!("Horizontal direction"),  // Catch all others
+    }
+}
+```
+
+## if let Syntax
+
+A shorter way to match a single pattern:
+
+```rust
+let some_value = Some(5);
+
+// Instead of this:
+match some_value {
+    Some(x) => println!("Value: {}", x),
+    _ => {}
+}
+
+// You can write:
+if let Some(x) = some_value {
+    println!("Value: {}", x);
+}
+
+// With else:
+if let Some(x) = some_value {
+    println!("Value: {}", x);
+} else {
+    println!("No value");
+}
+```
+
+Use `if let` when you only care about one pattern and want to ignore the rest.

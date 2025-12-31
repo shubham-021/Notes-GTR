@@ -1,0 +1,122 @@
+---
+title: Arrays and Slices
+description: Fixed-size arrays and dynamic slices in Go
+---
+
+## Arrays
+
+Arrays have a fixed size and contain elements of the same type:
+
+```go
+var variableName = [array_size]data_type{values}
+```
+
+### Examples
+
+```go
+// Array with initial values
+var names = [50]string{"Shubham", "Nana"}
+
+// Empty array
+var names = [50]string{}
+// or
+var names [50]string
+```
+
+### Working with Arrays
+
+```go
+fmt.Printf("The whole array: %v\n", names)
+fmt.Printf("The first value: %v\n", names[0])
+fmt.Printf("Array type: %T\n", names)
+fmt.Printf("Array length: %v\n", len(names))
+```
+
+## Slices
+
+What if you don't know the size when creating the collection? Use a slice.
+
+A slice is an abstraction of an array:
+- More flexible and powerful
+- Variable-length
+- Can get sub-arrays
+- Index-based with a size
+- Automatically resized when needed
+
+### Declaring Slices
+
+```go
+var names []string
+// or
+var names = []string{}
+// or
+names := []string{}
+```
+
+### The append Function
+
+`append` adds elements to the end of a slice and returns the updated slice:
+
+```go
+var names []string
+
+var firstName = "Shubham"
+var lastName = "Singh"
+
+names = append(names, firstName+" "+lastName)
+
+fmt.Printf("The whole slice: %v\n", names)
+fmt.Printf("The first value: %v\n", names[0])
+fmt.Printf("Slice type: %T\n", names)
+fmt.Printf("Slice length: %v\n", len(names))
+```
+
+## Practical Example: Booking System
+
+Here's a practical example using slices to manage bookings:
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+type UserData struct {
+    firstName       string
+    lastName        string
+    emailAddress    string
+    numberOfTickets uint
+}
+
+var bookings = make([]UserData, 0)
+
+func bookTicket(userTickets uint, firstName string, lastName string, emailAddress string) {
+    var userData = UserData{
+        firstName:       firstName,
+        lastName:        lastName,
+        emailAddress:    emailAddress,
+        numberOfTickets: userTickets,
+    }
+
+    bookings = append(bookings, userData)
+    fmt.Printf("Thank you %v %v for booking %v tickets.\n", firstName, lastName, userTickets)
+}
+
+func getFirstNames() []string {
+    firstNames := []string{}
+
+    for _, booking := range bookings {
+        firstNames = append(firstNames, booking.firstName)
+    }
+
+    return firstNames
+}
+```
+
+This demonstrates:
+- Using `make` to create a slice
+- Appending struct values to a slice
+- Iterating over a slice with `range`
+- Building a new slice from existing data

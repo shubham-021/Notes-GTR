@@ -1,0 +1,52 @@
+---
+title: Basic Types
+description: Primitive types, special types, and type annotations in TypeScript
+---
+
+TypeScript supports several primitive types:
+
+```typescript
+// Primitive types
+const num: number = 5;
+const str: string = "hello";
+const bool: boolean = true;
+const n: null = null;
+const u: undefined = undefined;
+
+// Special types
+const anything: any = "can be anything";    // Avoid when possible
+const unknown: unknown = "safer than any";  // Requires type checking before use
+const nothing: void = undefined;            // Used for functions that return nothing
+const neverReturns: never = (() => { throw new Error(); })(); // Never returns
+
+console.log(num);
+```
+
+## Type Annotations vs Type Inference
+
+TypeScript can infer types automatically:
+
+```typescript
+// Explicit annotation
+const explicit: number = 5;
+
+// Inferred type (TypeScript knows this is a number)
+const inferred = 5;
+```
+
+## When to Use Explicit Annotations
+
+Use explicit annotations when:
+
+- Declaring variables without initial values
+- Function parameters
+- Complex types where inference might not work as expected
+
+## Special Types Explained
+
+| Type | Purpose | Use Case |
+|------|---------|----------|
+| `any` | Opt out of type checking | Migration from JS (avoid in new code) |
+| `unknown` | Type-safe any | When you don't know the type yet |
+| `void` | No return value | Functions that don't return |
+| `never` | Never returns | Functions that throw or infinite loops |

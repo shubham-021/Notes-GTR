@@ -1,0 +1,150 @@
+---
+title: Macros
+description: Metaprogramming in Rust - code that writes code
+---
+
+Macros allow metaprogramming - code that writes code.
+
+## Declarative Macros (macro_rules!)
+
+```rust
+macro_rules! say_hello {
+    () => {
+        println!("Hello!");
+    };
+}
+
+macro_rules! create_function {
+    ($func_name:ident) => {
+        fn $func_name() {
+            println!("Function {:?} called", stringify!($func_name));
+        }
+    };
+}
+
+create_function!(foo);
+create_function!(bar);
+
+fn main() {
+    say_hello!();
+    foo();
+    bar();
+}
+```
+
+## Common Built-in Macros
+
+```rust
+fn main() {
+    // println! - print with newline
+    println!("Hello, {}!", "world");
+
+    // print! - print without newline
+    print!("No newline");
+
+    // format! - create String
+    let s = format!("x = {}", 42);
+
+    // vec! - create Vec
+    let v = vec![1, 2, 3];
+
+    // panic! - crash with message
+    // panic!("Something went wrong");
+
+    // assert! - panic if false
+    assert!(1 + 1 == 2);
+
+    // assert_eq! / assert_ne!
+    assert_eq!(4, 2 + 2);
+    assert_ne!(4, 3);
+
+    // dbg! - debug print with file/line
+    let x = dbg!(5 * 2);  // Prints: [src/main.rs:X] 5 * 2 = 10
+
+    // todo! - mark unfinished code
+    // todo!("implement this later");
+
+    // unreachable! - mark unreachable code
+    // unreachable!("this should never happen");
+}
+```
+
+## Procedural Macros
+
+There are three types:
+
+### 1. Custom derive macros
+
+Add functionality to structs/enums:
+
+```rust
+#[derive(Debug, Clone, PartialEq)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+```
+
+### 2. Attribute-like macros
+
+Create custom attributes:
+
+```rust
+#[route(GET, "/")]
+fn index() { }
+```
+
+### 3. Function-like macros
+
+Look like function calls:
+
+```rust
+let sql = sql!(SELECT * FROM posts WHERE id=1);
+```
+
+## Display and Debug Traits
+
+```rust
+use std::fmt::{Display, Formatter, Result};
+
+struct User {
+    name: String,
+    age: u32,
+}
+
+// Implement Display for user-friendly output
+impl Display for User {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{} ({} years old)", self.name, self.age)
+    }
+}
+
+// Or use derive for Debug
+#[derive(Debug)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let user = User {
+        name: String::from("Alice"),
+        age: 30,
+    };
+
+    println!("{}", user);    // Display: Alice (30 years old)
+
+    let point = Point { x: 1, y: 2 };
+    println!("{:?}", point);  // Debug: Point { x: 1, y: 2 }
+    println!("{:#?}", point); // Pretty debug (multiline)
+}
+```
+
+## Expanding Macros
+
+To see what macros expand to:
+
+```bash
+cargo install cargo-expand
+cargo expand
+```

@@ -1,0 +1,88 @@
+---
+title: Types vs Interfaces
+description: Understanding when to use type aliases vs interfaces
+---
+
+Both `type` and `interface` can be used to define object shapes, but they have key differences.
+
+## Comparison Table
+
+| Feature | Interface | Type |
+|---------|-----------|------|
+| Extend other types | Yes (using `extends`) | Yes (using `&`) |
+| Implement in classes | Yes | No |
+| Declaration merging | Yes | No |
+| Union types | No | Yes |
+| Intersection types | No (use `extends`) | Yes |
+| Primitive aliases | No | Yes |
+| Tuple types | No | Yes |
+
+## When to Use Interface
+
+Use `interface` when:
+
+- Defining object shapes
+- Creating contracts for classes to implement
+- You need declaration merging
+
+```typescript
+interface User {
+    name: string;
+}
+
+// Declaration merging - adds to existing interface
+interface User {
+    email: string;
+}
+
+// User now has both name and email
+```
+
+## When to Use Type
+
+Use `type` when:
+
+- Creating union or intersection types
+- Creating type aliases for primitives
+- Working with tuples
+- You need more complex type operations
+
+```typescript
+// Union type
+type Status = "pending" | "approved" | "rejected";
+
+// Primitive alias
+type ID = string | number;
+
+// Tuple
+type Coordinate = [number, number];
+
+// Intersection
+type Employee = User & { department: string };
+```
+
+## Extending
+
+```typescript
+// Interface extends interface
+interface Animal {
+    name: string;
+}
+
+interface Dog extends Animal {
+    breed: string;
+}
+
+// Type intersection
+type Animal = {
+    name: string;
+};
+
+type Dog = Animal & {
+    breed: string;
+};
+```
+
+## Recommendation
+
+For most cases, prefer `interface` for object types - it's more readable and provides better error messages. Use `type` when you need its unique capabilities like unions or tuples.

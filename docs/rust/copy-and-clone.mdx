@@ -1,0 +1,93 @@
+---
+title: Copy and Clone Traits
+description: Understanding when values are copied vs moved
+---
+
+Understanding when values are copied vs moved.
+
+## Copy Trait
+
+Types that implement `Copy` are duplicated instead of moved:
+
+```rust
+fn main() {
+    let x = 5;
+    let y = x;  // Copy, not move
+    println!("{} {}", x, y);  // Both valid
+}
+```
+
+## Types that Implement Copy
+
+- All integer types (i32, u64, etc.)
+- Boolean (bool)
+- Floating point types (f32, f64)
+- Character (char)
+- Tuples of Copy types
+- Arrays of Copy types
+- References (&T)
+
+## Types That Cannot Be Copy
+
+- String
+- Vec<T>
+- Box<T>
+- Any type containing heap-allocated data
+
+## Clone Trait
+
+`Clone` provides explicit deep copying:
+
+```rust
+fn main() {
+    let s1 = String::from("hello");
+    let s2 = s1.clone();  // Explicit deep copy
+    println!("{} {}", s1, s2);  // Both valid
+}
+```
+
+## Deriving Copy and Clone
+
+```rust
+// Only works if all fields implement Copy
+#[derive(Debug, Clone, Copy)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+// Clone only (contains String which doesn't implement Copy)
+#[derive(Debug, Clone)]
+struct User {
+    name: String,
+    age: u32,
+}
+
+fn main() {
+    let p1 = Point { x: 1, y: 2 };
+    let p2 = p1;  // Copy
+    println!("{:?} {:?}", p1, p2);
+
+    let u1 = User {
+        name: String::from("Alice"),
+        age: 30,
+    };
+    let u2 = u1.clone();  // Must explicitly clone
+    println!("{:?} {:?}", u1, u2);
+}
+```
+
+## Summary
+
+| Type | Behavior | Implements Copy? |
+|------|----------|------------------|
+| i32, u8, bool, f64, char | Copied | Yes |
+| String, Vec<T>, Box<T> | Moved | No |
+| &T (references) | Copied (just the pointer) | Yes |
+| Custom structs | Depends on fields | Must derive |
+
+## Rules for Deriving
+
+- `Copy` requires all fields to also implement `Copy`
+- `Clone` can be derived for any struct where all fields implement `Clone`
+- If you derive `Copy`, you must also derive `Clone`
