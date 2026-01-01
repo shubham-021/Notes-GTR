@@ -26,13 +26,7 @@ Every Bubble Tea program is built on four concepts:
 | **Update** | Changes state in response to messages | `(tea.Model, tea.Cmd)` |
 | **View** | Renders state as a string | `string` |
 
-These four concepts work together in a continuous cycle:
-
-```
-User Input → Message → Update → New State → View → Screen
-     ↑                                              |
-     └──────────────────────────────────────────────┘
-```
+These four concepts work together in a continuous cycle: user input creates a message, which triggers Update, which produces new state, which View renders to the screen, and the cycle repeats.
 
 ## Why Types Instead of Strings
 

@@ -107,15 +107,4 @@ Returning `nil` means "no startup work needed."
 7. `View()` redraws with the new state
 8. Repeat from step 5
 
-```
-┌─────────────────────────────────────────┐
-│                                         │
-│  Init() ──→ View() ──→ [wait for msg]   │
-│                              │          │
-│                              ▼          │
-│              Update(msg) ──→ View()     │
-│                   │                     │
-│                   └─────────────────────┘
-│                         (loop)
-└─────────────────────────────────────────┘
-```
+The loop continues indefinitely: waiting for input, updating state, and redrawing the view.
