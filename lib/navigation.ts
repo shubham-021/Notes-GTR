@@ -21,6 +21,7 @@ export const navigation: NavSection[] = [
             { title: "Methods & Receivers", slug: "go/methods-and-receivers" },
             { title: "Interfaces", slug: "go/interfaces" },
             { title: "Type Switching", slug: "go/type-switching" },
+            { title: "Type System", slug: "go/type-system" },
             { title: "Packages & Scope", slug: "go/packages-and-scope" },
             { title: "Concurrency", slug: "go/concurrency" },
             { title: "Go Idioms", slug: "go/go-idioms" },
