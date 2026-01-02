@@ -86,7 +86,7 @@ Add `"use client"` when you need:
 ## Common Error: Using Hooks in Server Components
 
 ```tsx
-// ❌ This will fail — no "use client" directive
+// BAD: This will fail - no "use client" directive
 import { useState } from 'react'
 
 export default function Counter() {

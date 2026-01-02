@@ -29,6 +29,154 @@ func main() {
 }
 ```
 
+---
+
+## Simple String Enums
+
+For cases where you want human-readable string values without conversion, define constants with a string type:
+
+```go
+type Status string
+
+const (
+    Pending Status = "pending"
+    Active  Status = "active"
+    Done    Status = "done"
+)
+
+func main() {
+    status := Active
+    fmt.Println(status)  // active (already a string)
+}
+```
+
+### Advantages of String Enums
+
+- No `String()` method needed for readable output
+- JSON marshaling works automatically with the string value
+- Database storage is self-documenting
+- Easy to compare with string literals if needed
+
+```go
+type OrderStatus string
+
+const (
+    OrderPending   OrderStatus = "pending"
+    OrderShipped   OrderStatus = "shipped"
+    OrderDelivered OrderStatus = "delivered"
+)
+
+type Order struct {
+    ID     int         `json:"id"`
+    Status OrderStatus `json:"status"`
+}
+
+func main() {
+    order := Order{ID: 1, Status: OrderShipped}
+    
+    data, _ := json.Marshal(order)
+    fmt.Println(string(data))
+    // {"id":1,"status":"shipped"}
+}
+```
+
+### When to Use String vs Integer Enums
+
+| Use String Enums When | Use Integer Enums (iota) When |
+|-----------------------|-------------------------------|
+| Values appear in JSON/APIs | Performance is critical |
+| Stored in databases as text | Need bitwise operations (flags) |
+| Human readability matters | Sequential numbering is useful |
+| Debugging is easier with strings | Memory efficiency matters |
+
+### Why the Custom Type is Required
+
+Understanding why Go requires `type Status string` instead of just using constants reveals something fundamental about Go's type system.
+
+**First attempt: plain constants**
+
+```go
+const (
+    Pending = "pending"
+    Running = "running"
+)
+```
+
+This looks like an enum, but it is not. These are just string constants. Anywhere a string is accepted, these work, but so does `"banana"`. The compiler has no concept that `"banana"` is invalid in your mental model.
+
+**Second attempt: explicitly typed as string**
+
+```go
+const (
+    Pending string = "pending"
+    Running string = "running"
+)
+```
+
+This feels stronger because you explicitly wrote `string`. But this changes nothing.
+
+Writing `string` here does not create a new type. You are simply telling the compiler these constants are of the already-existing built-in type `string`. They remain just strings. They still accept `"banana"`. No constraints were added.
+
+**The distinction: values vs types**
+
+Constants live in the value world, not the type world. A constant declaration creates a named value, but it cannot create a new type. Only a type declaration can do that.
+
+**The solution: define a new type**
+
+```go
+type Status string
+```
+
+This single line changes everything.
+
+This does not mean "Status is a string." It means: "Create a new type called Status whose underlying representation is a string."
+
+Same bytes at runtime. Different identity at compile time.
+
+Now when you write:
+
+```go
+const (
+    Pending Status = "pending"
+    Running Status = "running"
+)
+
+func SetStatus(s Status) {}
+```
+
+The function `SetStatus` accepts `Pending` but rejects `"pending"`. Go is enforcing meaning through types.
+
+### Const Blocks Do Not Propagate Types
+
+A common misconception:
+
+```go
+const (
+    Pending Status = "pending"
+    Running = "running"  // What type is this?
+)
+```
+
+This compiles, but it creates two different things:
+
+- `Pending` is a typed constant of type `Status`
+- `Running` is an untyped string constant
+
+Go does not propagate types inside a const block. Each constant is evaluated independently. A const block is grouping for convenience, not a shared type context.
+
+So `Running` is not a `Status`, even though it sits next to one. You must explicitly type each constant:
+
+```go
+const (
+    Pending Status = "pending"
+    Running Status = "running"  // Explicit type required
+)
+```
+
+Go never guesses intent. If you want a value to be a `Status`, you must say so.
+
+---
+
 ### How iota Works
 
 `iota` is a special constant that starts at `0` and increments by `1` for each constant in the block:

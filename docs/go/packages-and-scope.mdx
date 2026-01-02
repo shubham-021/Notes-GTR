@@ -1,15 +1,132 @@
 ---
-title: Packages and Scope
-description: Organizing code with packages, exports, and variable scope in Go
+title: Packages and Modules
+description: Organizing code with packages, modules, dependencies, and variable scope in Go
+---
+
+## Why Packages Exist
+
+Go uses packages to organize code into reusable, maintainable units. Packages provide several key benefits:
+
+**Code Organization**: Group related functionality together. A `http` package contains HTTP-related code, a `json` package handles JSON encoding/decoding.
+
+**Encapsulation**: Hide implementation details. Only exported identifiers (starting with uppercase) are visible outside the package.
+
+**Reusability**: Write once, import anywhere. The same package can be used across multiple projects.
+
+**Faster Compilation**: Go compiles packages independently. When you change one file, only its package needs recompilation, not the entire codebase. This is one reason Go compiles so fast compared to languages that recompile everything.
+
+**Dependency Management**: Packages declare their dependencies explicitly through imports, making the dependency graph clear and manageable.
+
+---
+
+## Files Within the Same Package
+
+All `.go` files in the same directory that declare the same package name share everything:
+
+```
+mypackage/
+├── main.go      # package mypackage
+├── helpers.go   # package mypackage
+└── utils.go     # package mypackage
+```
+
+Functions, types, and variables in `helpers.go` can directly use anything defined in `utils.go` without any import statements. They are effectively one unit of code split across multiple files.
+
+```go
+// helpers.go
+package mypackage
+
+func helper() {
+    utility()  // Defined in utils.go, no import needed
+}
+```
+
+```go
+// utils.go
+package mypackage
+
+func utility() {
+    // ...
+}
+```
+
+---
+
+## Running Multiple Files
+
+When you have multiple files in the same package:
+
+```bash
+go run main.go              # Fails if main.go uses code from other files
+go run main.go helpers.go   # Explicitly list all files
+go run .                    # Compile all .go files in current directory
+```
+
+Use `go run .` for convenience. It finds and compiles all Go files in the directory.
+
+---
+
+## Exporting: The Capital Letter Rule
+
+Go uses a simple convention for visibility: capitalize the first letter to export.
+
+### Exported (Public)
+
+```go
+package user
+
+func ValidateEmail(email string) bool {  // Exported
+    return strings.Contains(email, "@")
+}
+
+var MaxRetries = 3  // Exported
+```
+
+### Unexported (Private)
+
+```go
+package user
+
+func hashPassword(pwd string) string {  // Not exported
+    // ...
+}
+
+var defaultTimeout = 30  // Not exported
+```
+
+### Struct Field Visibility
+
+Making a struct exported does not automatically export its fields. Each field follows the same capital letter rule:
+
+```go
+type User struct {
+    ID        int       // Exported - accessible from other packages
+    Name      string    // Exported
+    email     string    // Not exported - only visible within this package
+    password  string    // Not exported
+}
+```
+
+From another package:
+
+```go
+u := user.User{
+    ID:   1,
+    Name: "Alice",
+    // email: "alice@example.com",  // Compile error: unexported field
+}
+
+fmt.Println(u.ID)     // Works
+fmt.Println(u.email)  // Compile error: unexported field
+```
+
+This lets you expose a type while keeping some fields private for internal use.
+
 ---
 
 ## Package Level Variables
 
-When a variable is used by many functions, it doesn't make sense to pass it from function to function. Define it as a package level variable.
-
-Package level variables:
-- Defined at the top, outside all functions
-- Must be declared using `var` (cannot use `:=`)
+When multiple functions need the same variable, define it at the package level instead of passing it everywhere:
 
 ```go
 package main
@@ -23,69 +140,139 @@ func main() {
 }
 
 func greetUser() {
-    fmt.Printf("Welcome to %v booking application\n", conferenceName)
-    fmt.Printf("We have total of %v tickets and %v are still available.\n", 
-        conferenceTickets, remainingTickets)
+    fmt.Printf("Welcome to %v\n", conferenceName)
+    fmt.Printf("%v tickets available\n", remainingTickets)
 }
 ```
 
-## Package Level Scope
+Package level variables:
+- Defined outside all functions
+- Must use `var` keyword (cannot use `:=`)
+- Accessible from any function in the same package
 
-Variables and functions defined outside any function can be accessed in all other files within the same package.
+---
 
-## Running Multiple Files
+## Modules and go.mod
 
-If you're using different files for the same package, you can't just run:
+A module is a collection of packages with a `go.mod` file at the root. The `go.mod` file defines the module path and tracks dependencies.
 
-```bash
-go run main.go  # Won't work if you have other files
-```
-
-You must provide all the files:
-
-```bash
-go run main.go helper.go
-```
-
-Or better, run all files in the current directory:
+### Initializing a Module
 
 ```bash
-go run .
+go mod init example.com/myproject
 ```
 
-## Multiple Packages
-
-Different package files should be separated in different folders:
+This creates a `go.mod` file:
 
 ```
-project/
-├── main.go           # package main
-└── helper/
-    └── helper.go     # package helper
+module example.com/myproject
+
+go 1.21
 ```
 
-### Exporting
+### What is the Module Name?
 
-To export any function or variable in Go, capitalize its first letter:
+The module name (e.g., `example.com/myproject`) is:
+- The import path prefix for all packages in the module
+- Not tied to any folder name
+- Can be any valid path string
+
+**Why use a GitHub URL?** Using `github.com/username/reponame` is a convention, not a requirement. The benefit is that `go get` can automatically download your module if someone wants to use it. If your module is only for local use, you can name it anything:
+
+```bash
+go mod init myapp           # Local only
+go mod init company/project # Internal
+go mod init github.com/user/repo  # Public, downloadable
+```
+
+The module name becomes the root import path:
 
 ```go
-// helper/helper.go
-package helper
-
-// Exported - accessible outside the package
-func ValidateUserInput(firstName string, lastName string) bool {
-    return len(firstName) >= 2 && len(lastName) >= 2
-}
-
-// Not exported - only accessible within the package
-func internalHelper() {
-    // ...
-}
+import "github.com/user/repo/internal/utils"
+//      ^-- module name --^ ^-- package path --^
 ```
 
-### Importing
+---
 
-Import packages relative to the module name:
+## go.sum: Dependency Checksums
+
+When you add dependencies, Go creates `go.sum` alongside `go.mod`. This file contains cryptographic checksums for each dependency:
+
+```
+github.com/gorilla/mux v1.8.0 h1:i40aqfkR1h2SlN9hojwV5ZA91wcXFOvkdNIeFDP5koI=
+github.com/gorilla/mux v1.8.0/go.mod h1:DVbg23sWSpFRCP0SfiEN6jmj59UnW/n46BH5rLB71So=
+```
+
+**Purpose**: Ensures reproducible builds. If someone downloads your project, Go verifies that the dependencies match exactly what you used. If the checksum differs, Go refuses to build, protecting against corrupted or tampered dependencies.
+
+You should commit both `go.mod` and `go.sum` to version control.
+
+---
+
+## Managing Dependencies
+
+### Adding Dependencies
+
+Dependencies are added automatically when you import and build:
+
+```go
+import "github.com/gorilla/mux"
+```
+
+```bash
+go build   # Downloads and adds to go.mod
+# or
+go get github.com/gorilla/mux  # Explicitly add
+```
+
+### go mod tidy
+
+The `go mod tidy` command synchronizes your `go.mod` and `go.sum` with your actual code:
+
+```bash
+go mod tidy
+```
+
+What it does:
+- Adds missing dependencies that your code imports
+- Removes dependencies that are no longer imported
+- Updates `go.sum` accordingly
+
+Run `go mod tidy` after adding or removing imports, or when dependencies seem out of sync.
+
+### Direct vs Indirect Dependencies
+
+In `go.mod`, you may see:
+
+```
+require (
+    github.com/gorilla/mux v1.8.0           // direct
+    github.com/gorilla/context v1.1.1 // indirect
+)
+```
+
+**Direct dependencies**: Packages you import directly in your code.
+
+**Indirect dependencies**: Packages that your direct dependencies require. You do not import them yourself, but your dependencies need them to work.
+
+Go tracks indirect dependencies to ensure complete, reproducible builds. Even if you only import `mux`, Go records that `mux` needs `context`.
+
+---
+
+## Importing Your Own Packages
+
+Structure your project with packages in subdirectories:
+
+```
+myproject/
+├── go.mod              # module github.com/user/myproject
+├── main.go             # package main
+└── internal/
+    └── auth/
+        └── auth.go     # package auth
+```
+
+Import using the full module path:
 
 ```go
 // main.go
@@ -93,20 +280,23 @@ package main
 
 import (
     "fmt"
-    "booking-app/helper"  // module-name/package-name
+    "github.com/user/myproject/internal/auth"
 )
 
 func main() {
-    isValid := helper.ValidateUserInput("Alex", "Chen")
-    fmt.Println(isValid)
+    auth.ValidateToken("abc123")
 }
 ```
+
+The import path is: `module name` + `/` + `relative path to package directory`.
+
+---
 
 ## Three Levels of Scope
 
 ### 1. Local Scope
 
-Declaration within a function or block:
+Variables declared inside a function or block:
 
 ```go
 func example() {
@@ -115,12 +305,13 @@ func example() {
     if true {
         blockVar := "in block"  // Only accessible in this block
     }
+    // blockVar not accessible here
 }
 ```
 
 ### 2. Package Scope
 
-Declaration outside all functions:
+Variables declared outside functions, accessible throughout the package:
 
 ```go
 package main
@@ -138,25 +329,37 @@ func example2() {
 
 ### 3. Global Scope
 
-Declaration outside all functions with uppercase first letter:
+Exported variables and functions, accessible from any package:
 
 ```go
-package helper
-
-var GlobalVar = "everywhere across all packages"  // Exported
+// In package helper
+var GlobalVar = "accessible from any package"
 ```
 
 ```go
-package main
-
+// In package main
 import "mymodule/helper"
 
 func main() {
-    fmt.Println(helper.GlobalVar)  // Accessible from another package
+    fmt.Println(helper.GlobalVar)
 }
 ```
 
+---
+
 ## Summary
+
+| Concept | Description |
+|---------|-------------|
+| Package | Group of related `.go` files with the same `package` declaration |
+| Module | Collection of packages with a `go.mod` file |
+| `go.mod` | Defines module path and tracks dependencies |
+| `go.sum` | Checksums for dependency verification |
+| `go mod tidy` | Sync `go.mod`/`go.sum` with actual imports |
+| Direct dependency | Package you import in your code |
+| Indirect dependency | Package your dependencies require |
+| Exported | Identifier starting with uppercase, visible outside package |
+| Unexported | Identifier starting with lowercase, package-private |
 
 | Scope | Declaration Location | First Letter | Accessible From |
 |-------|---------------------|--------------|-----------------|

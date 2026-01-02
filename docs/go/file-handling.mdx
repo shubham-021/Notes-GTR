@@ -28,6 +28,116 @@ Suitable for small files. Loads entire file into memory.
 
 ---
 
+## Error Handling with panic
+
+When a file operation fails and there is no reasonable way to recover, use `panic` to immediately stop execution. This is common in scripts or initialization code where continuing without the file would be meaningless.
+
+```go
+f, err := os.Open("example.txt")
+if err != nil {
+    panic(err)  // Program stops here with error message
+}
+defer f.Close()
+```
+
+`panic` differs from returning an error:
+- `panic` aborts the program immediately (unless recovered)
+- Returning an error allows the caller to decide how to handle the failure
+
+Use `panic` sparingly. In libraries and production code, prefer returning errors. Reserve `panic` for truly unrecoverable situations or quick scripts where you want fail-fast behavior.
+
+---
+
+## Getting File Information
+
+Use `file.Stat()` or `os.Stat()` to retrieve metadata about a file without reading its contents.
+
+### Using Stat on an Open File
+
+```go
+f, err := os.Open("example.txt")
+if err != nil {
+    panic(err)
+}
+defer f.Close()
+
+fileInfo, err := f.Stat()
+if err != nil {
+    panic(err)
+}
+
+fmt.Println("File Name:", fileInfo.Name())       // example.txt
+fmt.Println("Is Directory:", fileInfo.IsDir())   // false
+fmt.Println("File Size:", fileInfo.Size())       // size in bytes
+fmt.Println("Permissions:", fileInfo.Mode())     // -rw-r--r--
+fmt.Println("Last Modified:", fileInfo.ModTime()) // timestamp
+```
+
+### FileInfo Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Name()` | `string` | Base name of the file |
+| `Size()` | `int64` | Length in bytes for regular files |
+| `Mode()` | `FileMode` | File mode and permission bits |
+| `ModTime()` | `time.Time` | Last modification time |
+| `IsDir()` | `bool` | Whether the file is a directory |
+
+---
+
+## Reading File Content into Bytes
+
+For more control over reading, you can read file contents into a byte buffer manually.
+
+### Manual Byte Reading
+
+```go
+f, err := os.Open("example.txt")
+if err != nil {
+    panic(err)
+}
+defer f.Close()
+
+fileInfo, err := f.Stat()
+if err != nil {
+    panic(err)
+}
+
+// Create a buffer sized to the file
+buf := make([]byte, fileInfo.Size())
+
+// Read file into buffer
+bytesRead, err := f.Read(buf)
+if err != nil {
+    panic(err)
+}
+
+// Process byte by byte
+for i := 0; i < bytesRead; i++ {
+    fmt.Printf("Byte %d: %c\n", i, buf[i])
+}
+```
+
+### Simpler Alternative with os.ReadFile
+
+For most cases, `os.ReadFile` is cleaner:
+
+```go
+data, err := os.ReadFile("example.txt")
+if err != nil {
+    panic(err)
+}
+
+fmt.Println(string(data))  // Convert bytes to string
+```
+
+The manual approach is useful when you need to:
+- Process large files in chunks without loading everything into memory
+- Read specific portions of a file
+- Track read position for binary file parsing
+
+---
+
 ## Writing Entire Files
 
 ### os.WriteFile (Simple)

@@ -1,0 +1,451 @@
+---
+title: TypeScript Configuration
+description: Understanding tsconfig.json options for different project types
+---
+
+## What is tsconfig.json?
+
+The `tsconfig.json` file specifies compiler options and files for a TypeScript project. It tells the TypeScript compiler how to process your code.
+
+```bash
+# Generate a tsconfig.json with default options
+npx tsc --init
+```
+
+---
+
+## Core Compiler Options
+
+### target
+
+Specifies the ECMAScript version for the output JavaScript. TypeScript will "downlevel" newer syntax to work in older environments.
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022"
+  }
+}
+```
+
+| Value | Description | Use When |
+|-------|-------------|----------|
+| `ES5` | Compatible with older browsers | Supporting IE11 or very old Node |
+| `ES2015`/`ES6` | Classes, arrow functions, Promises | Node 6+, modern browsers |
+| `ES2020` | Optional chaining, nullish coalescing | Node 14+, recent browsers |
+| `ES2022` | Top-level await, class fields | Node 16+, modern browsers |
+| `ESNext` | Latest features | Bundler handles transpilation |
+
+Choose the highest target your runtime supports for better output code and performance.
+
+### module
+
+Determines the module system for emitted JavaScript.
+
+```json
+{
+  "compilerOptions": {
+    "module": "NodeNext"
+  }
+}
+```
+
+| Value | Output Style | Use When |
+|-------|--------------|----------|
+| `CommonJS` | `require()`, `module.exports` | Older Node.js projects |
+| `ES2015`/`ESNext` | `import`, `export` | Bundler or modern runtime |
+| `NodeNext` | Respects package.json type field | Modern Node.js (ESM or CJS) |
+| `Preserve` | Keep original syntax | Bundler handles modules |
+
+For Node.js projects, `NodeNext` is recommended as it properly handles both ESM and CommonJS based on your package.json.
+
+### moduleResolution
+
+Tells TypeScript how to find imported modules.
+
+```json
+{
+  "compilerOptions": {
+    "moduleResolution": "NodeNext"
+  }
+}
+```
+
+| Value | Algorithm | Use When |
+|-------|-----------|----------|
+| `Node` | Classic Node.js resolution | Legacy CommonJS projects |
+| `Node16`/`NodeNext` | Modern Node, supports `exports` field | Node.js with ESM support |
+| `Bundler` | Like Node, but no extensions required | Webpack, Vite, esbuild |
+| `Classic` | Legacy TypeScript behavior | Never (deprecated) |
+
+`NodeNext` and `Bundler` both support `package.json` exports field. Use `Bundler` when a bundler handles resolution; use `NodeNext` when running directly in Node.
+
+### lib
+
+Specifies which built-in type definitions to include. Defaults based on `target`.
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  }
+}
+```
+
+| Value | Provides Types For |
+|-------|-------------------|
+| `ES5`, `ES2015`, etc. | JavaScript built-ins for that version |
+| `DOM` | Browser APIs (document, window, etc.) |
+| `DOM.Iterable` | Iterable DOM collections |
+| `WebWorker` | Web Worker APIs |
+
+Common patterns:
+- **Browser app**: `["ES2022", "DOM", "DOM.Iterable"]`
+- **Node.js**: `["ES2022"]` (no DOM)
+- **Full-stack**: Set per-project based on runtime
+
+---
+
+## Output Options
+
+### outDir
+
+Where compiled JavaScript files go.
+
+```json
+{
+  "compilerOptions": {
+    "outDir": "./dist"
+  }
+}
+```
+
+### rootDir
+
+Root of source files. TypeScript preserves directory structure relative to this.
+
+```json
+{
+  "compilerOptions": {
+    "rootDir": "./src"
+  }
+}
+```
+
+Given `src/utils/helper.ts`, output becomes `dist/utils/helper.js`.
+
+### declaration
+
+Generate `.d.ts` type declaration files alongside JavaScript.
+
+```json
+{
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "./dist/types"
+  }
+}
+```
+
+Required when publishing a library so consumers get type information.
+
+### sourceMap
+
+Generate source maps for debugging.
+
+```json
+{
+  "compilerOptions": {
+    "sourceMap": true
+  }
+}
+```
+
+Enables stepping through original TypeScript in debuggers.
+
+### noEmit
+
+Type-check only, do not output files.
+
+```json
+{
+  "compilerOptions": {
+    "noEmit": true
+  }
+}
+```
+
+Use when another tool (Vite, Next.js, esbuild) handles transpilation.
+
+---
+
+## Strictness Options
+
+### strict
+
+Enables all strict type-checking flags at once.
+
+```json
+{
+  "compilerOptions": {
+    "strict": true
+  }
+}
+```
+
+This is equivalent to setting all of the following to `true`:
+
+| Flag | What It Does |
+|------|--------------|
+| `strictNullChecks` | `null` and `undefined` are distinct types |
+| `noImplicitAny` | Error when type cannot be inferred |
+| `strictFunctionTypes` | Stricter function parameter checking |
+| `strictBindCallApply` | Check `bind`, `call`, `apply` arguments |
+| `strictPropertyInitialization` | Class properties must be initialized |
+| `noImplicitThis` | Error when `this` has implicit `any` type |
+| `useUnknownInCatchVariables` | `catch` variable is `unknown`, not `any` |
+| `alwaysStrict` | Emit `"use strict"` in JavaScript |
+
+Always enable `strict` for new projects. It catches many bugs at compile time.
+
+### Additional Type Safety
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
+```
+
+| Flag | What It Does |
+|------|--------------|
+| `noUncheckedIndexedAccess` | Array/object index access may be undefined |
+| `noImplicitReturns` | All paths must return a value |
+| `noFallthroughCasesInSwitch` | Require `break` or `return` in switch cases |
+
+---
+
+## Module Interoperability
+
+### esModuleInterop
+
+Enables default imports from CommonJS modules.
+
+```json
+{
+  "compilerOptions": {
+    "esModuleInterop": true
+  }
+}
+```
+
+Without it:
+```typescript
+import * as express from 'express';
+```
+
+With it:
+```typescript
+import express from 'express';
+```
+
+Almost always enable this for modern projects.
+
+### allowSyntheticDefaultImports
+
+Allow default imports when there is no default export. Purely a type-checking flag.
+
+```json
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true
+  }
+}
+```
+
+### resolveJsonModule
+
+Allow importing JSON files as modules.
+
+```json
+{
+  "compilerOptions": {
+    "resolveJsonModule": true
+  }
+}
+```
+
+```typescript
+import config from './config.json';
+console.log(config.apiUrl);
+```
+
+### isolatedModules
+
+Ensure each file can be transpiled independently.
+
+```json
+{
+  "compilerOptions": {
+    "isolatedModules": true
+  }
+}
+```
+
+Required when using esbuild, swc, or Babel which process files individually. Disallows features that require whole-program analysis (like `const enum`).
+
+---
+
+## Project Configuration
+
+### include and exclude
+
+Specify which files to compile (glob patterns).
+
+```json
+{
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
+```
+
+`exclude` defaults to `["node_modules"]`.
+
+### files
+
+Explicit list of files to include (rarely used).
+
+```json
+{
+  "files": ["src/index.ts", "src/types.ts"]
+}
+```
+
+### extends
+
+Inherit from a base configuration.
+
+```json
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  }
+}
+```
+
+Commonly used in monorepos to share settings.
+
+### baseUrl and paths
+
+Set up import aliases.
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@components/*": ["src/components/*"]
+    }
+  }
+}
+```
+
+```typescript
+import { Button } from '@components/Button';
+```
+
+Note: Your bundler or runtime also needs to understand these paths.
+
+---
+
+## Recommended Configurations
+
+### Node.js Backend
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+### Frontend with Bundler (Vite, Webpack)
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*"]
+}
+```
+
+### Library for npm
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+Use a lower target for wider compatibility whenever possible.
+
+---
+
+## Quick Reference
+
+| Option | Purpose | Common Value |
+|--------|---------|--------------|
+| `target` | JS version output | `ES2022` |
+| `module` | Module system | `NodeNext` or `ESNext` |
+| `moduleResolution` | Import resolution | `NodeNext` or `Bundler` |
+| `lib` | Built-in types | `["ES2022"]` or `["ES2022", "DOM"]` |
+| `outDir` | Output directory | `./dist` |
+| `rootDir` | Source root | `./src` |
+| `strict` | Enable all strict checks | `true` |
+| `noEmit` | Skip output files | `true` (when bundler transpiles) |
+| `declaration` | Generate .d.ts | `true` (for libraries) |
+| `esModuleInterop` | Default imports from CJS | `true` |
+| `skipLibCheck` | Skip .d.ts checking | `true` (faster builds) |
+| `isolatedModules` | Single-file transpilation safe | `true` (for esbuild/swc) |

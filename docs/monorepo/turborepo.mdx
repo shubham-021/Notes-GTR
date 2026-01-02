@@ -517,6 +517,309 @@ turbo link
 
 ---
 
+## Environment Variables
+
+Managing environment variables correctly is crucial for cache safety and consistent builds across development and CI.
+
+### Types of Environment Variables
+
+Turborepo provides four ways to handle environment variables:
+
+| Property | Scope | Cache Impact | Purpose |
+|----------|-------|--------------|---------|
+| `env` | Per-task | Invalidates cache | Variables that affect task output |
+| `globalEnv` | All tasks | Invalidates all caches | Variables affecting entire build |
+| `passthroughEnv` | Per-task | No cache impact | Runtime-only variables |
+| `globalPassThroughEnv` | All tasks | No cache impact | Global runtime variables |
+
+### env (Task-Specific)
+
+List environment variables that affect a specific task's output. Changes invalidate only that task's cache:
+
+```json
+{
+  "tasks": {
+    "build": {
+      "env": ["API_URL", "FEATURE_FLAGS"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+If `API_URL` changes, only `build` tasks are re-run.
+
+### globalEnv (Affects All Tasks)
+
+Variables that should invalidate the cache for all tasks when changed:
+
+```json
+{
+  "globalEnv": ["CI", "NODE_ENV"]
+}
+```
+
+Use sparingly. Prefer `env` for task-specific variables.
+
+### passthroughEnv (Runtime Only)
+
+Variables available at runtime but not affecting the cache hash. Useful for secrets or deployment-specific values:
+
+```json
+{
+  "tasks": {
+    "deploy": {
+      "passthroughEnv": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+      "cache": false
+    }
+  }
+}
+```
+
+The deploy task can access AWS credentials, but changing them does not invalidate cache.
+
+### globalPassThroughEnv
+
+Same as `passthroughEnv` but available to all tasks:
+
+```json
+{
+  "globalPassThroughEnv": ["TERM", "CI_JOB_ID"]
+}
+```
+
+### Framework Inference
+
+Turborepo automatically detects and includes framework-specific environment variables:
+
+- Next.js: `NEXT_PUBLIC_*` variables are automatically included
+- Vite: `VITE_*` variables are automatically included
+- Create React App: `REACT_APP_*` variables are automatically included
+
+You do not need to manually list these in your `env` configuration.
+
+### Handling .env Files
+
+Best practice is to place `.env` files within specific packages rather than at the root:
+
+```
+monorepo/
+  apps/
+    web/
+      .env.local        # Web-specific variables
+    api/
+      .env.local        # API-specific variables
+  .env                  # Avoid: leaks across packages
+```
+
+Include `.env` files in your inputs to invalidate cache when they change:
+
+```json
+{
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+### Strict vs Loose Mode
+
+Turborepo runs in **Strict Mode** by default:
+- Only explicitly listed variables are available to tasks
+- Prevents accidental cache pollution from environment differences
+
+To allow all environment variables (not recommended):
+
+```json
+{
+  "globalPassThroughEnv": ["*"]
+}
+```
+
+---
+
+## Package Linking
+
+Linking packages allows code sharing within your monorepo without publishing to npm.
+
+### Setting Up Internal Packages
+
+Each internal package needs a proper `package.json`:
+
+```json
+{
+  "name": "@repo/ui",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  }
+}
+```
+
+Key fields:
+
+| Field | Purpose |
+|-------|---------|
+| `name` | Package identifier, typically `@repo/package-name` |
+| `private` | Prevents accidental npm publishing |
+| `main` | Entry point for CommonJS |
+| `exports` | Modern entry points for ESM and bundlers |
+| `types` | TypeScript declaration entry |
+
+### The @repo Convention
+
+The `@repo` scope is a convention (not a requirement). Benefits:
+
+- Clearly distinguishes internal packages from npm packages
+- Easy to identify monorepo imports at a glance
+- Does not need npm scope registration (packages stay private)
+
+You can use any scope or even no scope:
+
+```json
+{"name": "@repo/ui"}      // Common convention
+{"name": "@mycompany/ui"} // Company scope
+{"name": "shared-ui"}     // No scope
+```
+
+### Consuming Internal Packages
+
+Add the internal package as a dependency in the consumer's `package.json`:
+
+```json
+{
+  "name": "@repo/web",
+  "dependencies": {
+    "@repo/ui": "*",
+    "@repo/utils": "*"
+  }
+}
+```
+
+Using `*` or `workspace:*` (pnpm) means "use whatever version is in the monorepo."
+
+Then import normally:
+
+```typescript
+import { Button } from '@repo/ui';
+import { formatDate } from '@repo/utils';
+```
+
+### Pointing to Source vs Dist
+
+You can point directly to TypeScript source:
+
+```json
+{
+  "main": "./src/index.ts",
+  "types": "./src/index.ts"
+}
+```
+
+Or to compiled output:
+
+```json
+{
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
+}
+```
+
+**Source approach** (recommended for most cases):
+- Bundler (Next.js, Vite) transpiles the package
+- No separate build step needed for packages
+- Changes reflect immediately in development
+
+**Dist approach** (for libraries or complex packages):
+- Package must be built before consumers can use it
+- Use `"dependsOn": ["^build"]` to ensure correct build order
+- Better for packages with complex build steps
+
+### TypeScript Configuration
+
+For TypeScript to resolve internal packages, you may need path mappings in shared `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@repo/ui": ["../../packages/ui/src"],
+      "@repo/utils": ["../../packages/utils/src"]
+    }
+  }
+}
+```
+
+However, with proper `package.json` exports and modern bundlers, path mappings are often unnecessary.
+
+### Complete Example
+
+Project structure:
+
+```
+monorepo/
+  apps/
+    web/
+      package.json
+  packages/
+    ui/
+      package.json
+      src/
+        index.ts
+        Button.tsx
+```
+
+`packages/ui/package.json`:
+
+```json
+{
+  "name": "@repo/ui",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  }
+}
+```
+
+`apps/web/package.json`:
+
+```json
+{
+  "name": "@repo/web",
+  "dependencies": {
+    "@repo/ui": "*",
+    "react": "^18.0.0"
+  }
+}
+```
+
+`apps/web/src/App.tsx`:
+
+```tsx
+import { Button } from '@repo/ui';
+
+export function App() {
+  return <Button>Click me</Button>;
+}
+```
+
+After running `npm install` (or pnpm/yarn), the package manager symlinks `@repo/ui` to the actual package directory, enabling direct imports.
+
+---
+
 ## Quick Reference
 
 | Property | Purpose | Example |

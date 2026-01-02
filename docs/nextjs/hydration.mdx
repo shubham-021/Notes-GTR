@@ -81,7 +81,7 @@ Hydration errors occur when server-rendered HTML doesn't match what React expect
 ### Common Causes
 
 ```tsx
-// ❌ Using browser-only values during render
+// BAD: Using browser-only values during render
 export default function Time() {
   return <p>Current time: {new Date().toLocaleTimeString()}</p>
 }
