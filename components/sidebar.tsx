@@ -97,7 +97,7 @@ export function Sidebar() {
 
     const SidebarContent = () => (
         <>
-            <Link href="/docs/go/getting-started" className="mb-8 mt-8 block" onClick={closeSidebar}>
+            <Link href="/docs/overview" className="mb-8 mt-8 block" onClick={closeSidebar}>
                 <span className={cn(
                     "text-xl font-bold",
                     theme === "dark" ? "text-white" : "text-(--paper-text)"

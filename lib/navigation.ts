@@ -167,7 +167,7 @@ export const navigation: NavSection[] = [
         ],
     },
     {
-        title: "GenAI with Python",
+        title: "GenAI",
         items: [
             { title: "Transformer Fundamentals", slug: "genai-python/transformer-fundamentals" },
             { title: "Python Environment", slug: "genai-python/python-environment" },
