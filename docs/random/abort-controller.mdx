@@ -1,0 +1,325 @@
+---
+title: AbortController
+description: Understanding cancellation and timeout patterns in JavaScript using AbortController and AbortSignal
+---
+
+## What is AbortController?
+
+`AbortController` is a built-in JavaScript interface that provides a mechanism to **abort asynchronous operations**. It works by creating an `AbortSignal` that can be passed to cancellable operations, allowing you to signal when an operation should be terminated.
+
+Think of it as a kill switch for async operations. You create a controller, hand its signal to an operation, and when needed, pull the trigger to abort.
+
+---
+
+## Core Components
+
+| Component | Description |
+|-----------|-------------|
+| `AbortController` | The controller object that manages abortion |
+| `AbortSignal` | A signal object passed to async operations to monitor for abort requests |
+| `abort()` | Method on controller that triggers the abort |
+| `signal.aborted` | Boolean indicating if the signal has been aborted |
+| `signal.reason` | The reason passed to `abort()`, or a default `DOMException` |
+
+---
+
+## Basic Usage
+
+### Creating and Using an AbortController
+
+```javascript
+const controller = new AbortController();
+const signal = controller.signal;
+
+// Pass the signal to an abortable operation
+fetch('/api/data', { signal })
+  .then(response => response.json())
+  .then(data => console.log(data))
+  .catch(error => {
+    if (error.name === 'AbortError') {
+      console.log('Request was aborted');
+    } else {
+      throw error;
+    }
+  });
+
+// Abort the request
+controller.abort();
+```
+
+### Providing an Abort Reason
+
+```javascript
+const controller = new AbortController();
+
+controller.abort('User cancelled the operation');
+
+console.log(controller.signal.aborted); // true
+console.log(controller.signal.reason);  // 'User cancelled the operation'
+```
+
+---
+
+## Listening for Abort Events
+
+The `AbortSignal` emits an `abort` event when the controller's `abort()` method is called. This allows you to perform cleanup or custom logic when an abort occurs.
+
+```javascript
+const controller = new AbortController();
+const signal = controller.signal;
+
+signal.addEventListener('abort', () => {
+  console.log('Abort event fired');
+  console.log('Reason:', signal.reason);
+});
+
+controller.abort('Timeout exceeded');
+// Output:
+// Abort event fired
+// Reason: Timeout exceeded
+```
+
+---
+
+## Timeout Patterns
+
+### Using AbortSignal.timeout()
+
+The static `AbortSignal.timeout()` method creates a signal that automatically aborts after a specified duration. This is the preferred way to implement timeouts.
+
+```javascript
+// Abort after 5 seconds
+const signal = AbortSignal.timeout(5000);
+
+fetch('/api/slow-endpoint', { signal })
+  .then(response => response.json())
+  .then(data => console.log(data))
+  .catch(error => {
+    if (error.name === 'TimeoutError') {
+      console.log('Request timed out');
+    }
+  });
+```
+
+### Manual Timeout with AbortController
+
+When you need more control, you can implement timeouts manually:
+
+```javascript
+function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  
+  const timeoutId = setTimeout(() => {
+    controller.abort('Request timeout');
+  }, timeoutMs);
+
+  return fetch(url, { signal: controller.signal })
+    .finally(() => clearTimeout(timeoutId));
+}
+
+fetchWithTimeout('/api/data', 3000)
+  .then(response => response.json())
+  .catch(error => {
+    if (error.name === 'AbortError') {
+      console.log('Request timed out or was aborted');
+    }
+  });
+```
+
+---
+
+## Combining Multiple Signals
+
+### Using AbortSignal.any()
+
+`AbortSignal.any()` creates a signal that aborts when any of the provided signals abort. This is useful for combining multiple cancellation sources.
+
+```javascript
+const userController = new AbortController();
+const timeoutSignal = AbortSignal.timeout(10000);
+
+const combinedSignal = AbortSignal.any([
+  userController.signal,
+  timeoutSignal,
+]);
+
+fetch('/api/data', { signal: combinedSignal })
+  .then(response => response.json())
+  .catch(error => {
+    if (error.name === 'AbortError') {
+      console.log('Aborted by user');
+    } else if (error.name === 'TimeoutError') {
+      console.log('Timed out');
+    }
+  });
+
+// User can still manually abort
+document.getElementById('cancel').onclick = () => {
+  userController.abort('User cancelled');
+};
+```
+
+---
+
+## Common Use Cases
+
+| Use Case | Description |
+|----------|-------------|
+| Fetch cancellation | Cancel pending HTTP requests when a component unmounts or user navigates away |
+| Search debouncing | Abort previous search requests when new input is received |
+| Timeout enforcement | Cancel operations that exceed a time limit |
+| Stream processing | Stop reading from streams when data is no longer needed |
+| Event listener cleanup | Remove event listeners when they are no longer relevant |
+
+---
+
+## Integration with Event Listeners
+
+You can use an `AbortSignal` to automatically remove event listeners when aborted:
+
+```javascript
+const controller = new AbortController();
+
+document.addEventListener('click', handleClick, { 
+  signal: controller.signal 
+});
+
+document.addEventListener('keydown', handleKeydown, { 
+  signal: controller.signal 
+});
+
+// Later: remove all listeners at once
+controller.abort();
+```
+
+This is particularly useful in frameworks where cleanup is important:
+
+```javascript
+function setupComponent() {
+  const controller = new AbortController();
+  const signal = controller.signal;
+
+  window.addEventListener('resize', onResize, { signal });
+  document.addEventListener('scroll', onScroll, { signal });
+
+  // Return cleanup function
+  return () => controller.abort();
+}
+
+const cleanup = setupComponent();
+// When component unmounts
+cleanup();
+```
+
+---
+
+## Making Custom Operations Abortable
+
+You can make your own async functions respect `AbortSignal`:
+
+```javascript
+async function processItems(items, signal) {
+  const results = [];
+
+  for (const item of items) {
+    // Check if aborted before each iteration
+    if (signal?.aborted) {
+      throw new DOMException('Operation aborted', 'AbortError');
+    }
+
+    const result = await processItem(item);
+    results.push(result);
+  }
+
+  return results;
+}
+
+// Usage
+const controller = new AbortController();
+
+processItems(largeArray, controller.signal)
+  .then(results => console.log('Done:', results))
+  .catch(error => {
+    if (error.name === 'AbortError') {
+      console.log('Processing was cancelled');
+    }
+  });
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+```
+
+### Using the abort Event for Immediate Response
+
+```javascript
+async function longRunningTask(signal) {
+  return new Promise((resolve, reject) => {
+    // Reject immediately if already aborted
+    if (signal?.aborted) {
+      return reject(new DOMException('Aborted', 'AbortError'));
+    }
+
+    // Listen for abort during execution
+    signal?.addEventListener('abort', () => {
+      reject(new DOMException('Aborted', 'AbortError'));
+    });
+
+    // Simulate work
+    setTimeout(() => resolve('Complete'), 10000);
+  });
+}
+```
+
+---
+
+## Error Handling
+
+| Error Type | Cause | How to Check |
+|------------|-------|--------------|
+| `AbortError` | Manual abort via `controller.abort()` | `error.name === 'AbortError'` |
+| `TimeoutError` | Signal created by `AbortSignal.timeout()` expired | `error.name === 'TimeoutError'` |
+
+```javascript
+async function safeFetch(url, signal) {
+  try {
+    const response = await fetch(url, { signal });
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.log('Request aborted by user');
+      return null;
+    }
+    if (error.name === 'TimeoutError') {
+      console.log('Request timed out');
+      return null;
+    }
+    throw error; // Re-throw unexpected errors
+  }
+}
+```
+
+---
+
+## Browser and Node.js Support
+
+`AbortController` is available in:
+
+| Environment | Support |
+|-------------|---------|
+| Modern browsers | Full support (Chrome 66+, Firefox 57+, Safari 12.1+) |
+| Node.js | Full support (v15.4.0+, global since v15.0.0) |
+| Deno | Full support |
+| Bun | Full support |
+
+---
+
+## Best Practices
+
+1. **Always check `signal.aborted` before starting work** to handle pre-aborted signals
+2. **Clear timeouts** when using manual timeout patterns to prevent memory leaks
+3. **Propagate signals** through your call stack to enable cancellation at any level
+4. **Use `AbortSignal.timeout()`** instead of manual `setTimeout` patterns when possible
+5. **Prefer `AbortSignal.any()`** for combining multiple cancellation sources
+6. **Handle both AbortError and TimeoutError** when using timeout signals
+7. **Create new controllers** for each operation, as they cannot be reused after abort
+

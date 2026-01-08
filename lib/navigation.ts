@@ -159,6 +159,7 @@ export const navigation: NavSection[] = [
     {
         title: "Random",
         items: [
+            { title: "AbortController", slug: "random/abort-controller" },
             { title: "Linux Commands", slug: "random/linux-commands" },
             { title: "SSH", slug: "random/ssh" },
             { title: "tsconfig.json", slug: "random/tsconfig" },
