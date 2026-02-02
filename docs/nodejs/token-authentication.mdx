@@ -1,0 +1,641 @@
+---
+title: Token-Based Authentication
+description: Implementing JWT and Bearer token authentication in Express.js with best practices
+---
+
+## What is Token-Based Authentication?
+
+Token-based authentication is a stateless authentication mechanism where the server generates a token (usually a JWT) upon successful login, and the client stores and sends this token with subsequent requests.
+
+| Aspect | Token-Based | Cookie-Based |
+|--------|-------------|--------------|
+| Storage | Client manages (localStorage, memory) | Browser manages (cookies) |
+| Sent automatically | No, must be added to headers | Yes |
+| Stateless | Yes, server doesn't store sessions | Can be stateless (JWT) or stateful (session ID) |
+| CSRF vulnerability | No | Yes |
+| XSS vulnerability | Yes (if in localStorage) | No (with httpOnly) |
+| Mobile apps | Perfect | Limited support |
+
+---
+
+## JWT (JSON Web Token)
+
+JWT is the most popular format for authentication tokens. It consists of three parts:
+
+```
+header.payload.signature
+```
+
+### JWT Structure
+
+```javascript
+// Header (algorithm and token type)
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+
+// Payload (user data and claims)
+{
+  "userId": "123",
+  "email": "user@example.com",
+  "iat": 1609459200,  // Issued at
+  "exp": 1609545600   // Expiration time
+}
+
+// Signature (verifies token hasn't been tampered with)
+HMACSHA256(
+  base64UrlEncode(header) + "." + base64UrlEncode(payload),
+  secret
+)
+```
+
+**Important:** JWTs are encoded, not encrypted. Anyone can decode and read the payload. Don't store sensitive data in JWTs.
+
+---
+
+## Setting Up JWT Authentication
+
+### 1. Install jsonwebtoken
+
+```bash
+npm install jsonwebtoken
+```
+
+### 2. Generate Tokens on Login
+
+```javascript
+import express from 'express';
+import jwt from 'jsonwebtoken';
+
+const app = express();
+app.use(express.json());
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  
+  // Validate credentials
+  const user = await authenticateUser(email, password);
+  
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  // Generate JWT
+  const token = jwt.sign(
+    { userId: user.id, email: user.email },  // Payload
+    JWT_SECRET,                               // Secret key
+    { expiresIn: '7d' }                       // Options
+  );
+  
+  res.json({
+    message: 'Login successful',
+    token,
+    user: { id: user.id, email: user.email }
+  });
+});
+```
+
+### 3. Client Stores the Token
+
+The client receives the token and stores it:
+
+**Option 1: localStorage (common but vulnerable to XSS)**
+
+```javascript
+const response = await fetch('/api/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+});
+
+const { token } = await response.json();
+localStorage.setItem('token', token);
+```
+
+**Option 2: Memory (more secure, lost on refresh)**
+
+```javascript
+let authToken = null;
+
+const response = await fetch('/api/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+});
+
+const { token } = await response.json();
+authToken = token;  // Store in variable
+```
+
+**Option 3: sessionStorage (cleared when tab closes)**
+
+```javascript
+sessionStorage.setItem('token', token);
+```
+
+### 4. Client Sends Token in Requests
+
+Send the token in the `Authorization` header with the `Bearer` scheme:
+
+```javascript
+const token = localStorage.getItem('token');
+
+fetch('/api/profile', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+```
+
+---
+
+## Verifying Tokens (Authentication Middleware)
+
+Create middleware to verify tokens on protected routes:
+
+```javascript
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];  // "Bearer <token>"
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+  
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;  // Attach user data to request
+    next();
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(403).json({ error: 'Invalid token' });
+  }
+}
+
+// Protected route
+app.get('/api/profile', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+```
+
+---
+
+## JWT Options
+
+### Sign Options
+
+```javascript
+const token = jwt.sign(
+  { userId: user.id },
+  JWT_SECRET,
+  {
+    expiresIn: '7d',           // Expiration time
+    issuer: 'my-app',          // Who issued the token
+    audience: 'my-app-users',  // Who can use it
+    subject: user.id.toString() // Subject (user ID)
+  }
+);
+```
+
+### Verify Options
+
+```javascript
+const payload = jwt.verify(token, JWT_SECRET, {
+  issuer: 'my-app',
+  audience: 'my-app-users',
+  maxAge: '7d'
+});
+```
+
+### Common Time Formats
+
+```javascript
+'7d'        // 7 days
+'24h'       // 24 hours
+'60m'       // 60 minutes
+'300s'      // 300 seconds
+1000 * 60   // 60 seconds (milliseconds)
+```
+
+---
+
+## Refresh Tokens
+
+Long-lived access tokens are risky. Use short-lived access tokens with refresh tokens:
+
+### Access Token vs Refresh Token
+
+| Property | Access Token | Refresh Token |
+|----------|--------------|---------------|
+| Lifespan | Short (15 min - 1 hour) | Long (7 days - 30 days) |
+| Purpose | Access protected resources | Get new access tokens |
+| Storage | Memory (preferred) | httpOnly cookie (more secure) |
+| Frequency | Sent with every request | Sent only to refresh endpoint |
+
+### Implementation
+
+```javascript
+// Generate both tokens on login
+app.post('/api/login', async (req, res) => {
+  const user = await authenticateUser(req.body.email, req.body.password);
+  
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  // Short-lived access token
+  const accessToken = jwt.sign(
+    { userId: user.id, email: user.email },
+    JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+  
+  // Long-lived refresh token
+  const refreshToken = jwt.sign(
+    { userId: user.id, type: 'refresh' },
+    REFRESH_TOKEN_SECRET,
+    { expiresIn: '7d' }
+  );
+  
+  // Store refresh token in database (for revocation)
+  await saveRefreshToken(user.id, refreshToken);
+  
+  // Send refresh token as httpOnly cookie
+  res.cookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
+  
+  res.json({
+    accessToken,
+    user: { id: user.id, email: user.email }
+  });
+});
+
+// Refresh endpoint
+app.post('/api/refresh', async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+  
+  if (!refreshToken) {
+    return res.status(401).json({ error: 'Refresh token required' });
+  }
+  
+  try {
+    const payload = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+    
+    // Check if token is in database (not revoked)
+    const isValid = await verifyRefreshToken(payload.userId, refreshToken);
+    if (!isValid) {
+      return res.status(403).json({ error: 'Invalid refresh token' });
+    }
+    
+    // Generate new access token
+    const accessToken = jwt.sign(
+      { userId: payload.userId },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+    
+    res.json({ accessToken });
+  } catch (err) {
+    res.status(403).json({ error: 'Invalid refresh token' });
+  }
+});
+
+// Logout (revoke refresh token)
+app.post('/api/logout', authenticateToken, async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+  
+  if (refreshToken) {
+    await revokeRefreshToken(req.user.userId, refreshToken);
+  }
+  
+  res.clearCookie('refreshToken');
+  res.json({ message: 'Logged out' });
+});
+```
+
+### Client-Side Token Refresh
+
+```javascript
+let accessToken = null;
+
+// Store access token after login
+async function login(email, password) {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    credentials: 'include',  // Send/receive cookies
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  
+  const { accessToken: token } = await res.json();
+  accessToken = token;
+}
+
+// Refresh access token
+async function refreshAccessToken() {
+  const res = await fetch('/api/refresh', {
+    method: 'POST',
+    credentials: 'include'  // Send refresh token cookie
+  });
+  
+  if (res.ok) {
+    const { accessToken: token } = await res.json();
+    accessToken = token;
+    return token;
+  }
+  
+  // Refresh failed, redirect to login
+  window.location.href = '/login';
+  return null;
+}
+
+// Make authenticated request with auto-refresh
+async function fetchWithAuth(url, options = {}) {
+  options.headers = {
+    ...options.headers,
+    'Authorization': `Bearer ${accessToken}`
+  };
+  
+  let res = await fetch(url, options);
+  
+  // If token expired, refresh and retry
+  if (res.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      options.headers['Authorization'] = `Bearer ${newToken}`;
+      res = await fetch(url, options);
+    }
+  }
+  
+  return res;
+}
+```
+
+---
+
+## Token Revocation
+
+JWTs are stateless, so you can't "revoke" them like sessions. Strategies:
+
+### 1. Short Expiration Times
+
+The simplest approach. Tokens expire quickly, minimizing damage.
+
+```javascript
+const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+```
+
+### 2. Token Blacklist
+
+Store revoked tokens in a database or cache:
+
+```javascript
+const blacklist = new Set();  // In production, use Redis
+
+app.post('/api/logout', authenticateToken, (req, res) => {
+  const token = req.headers.authorization.split(' ')[1];
+  blacklist.add(token);
+  res.json({ message: 'Logged out' });
+});
+
+function authenticateToken(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  if (blacklist.has(token)) {
+    return res.status(401).json({ error: 'Token revoked' });
+  }
+  
+  // Verify token...
+  next();
+}
+```
+
+### 3. Token Versioning
+
+Include a version in the JWT and increment it on logout:
+
+```javascript
+// In database: user.tokenVersion = 1
+
+// On login
+const token = jwt.sign(
+  { userId: user.id, tokenVersion: user.tokenVersion },
+  JWT_SECRET
+);
+
+// On token verification
+function authenticateToken(req, res, next) {
+  const payload = jwt.verify(token, JWT_SECRET);
+  const user = getUserById(payload.userId);
+  
+  if (payload.tokenVersion !== user.tokenVersion) {
+    return res.status(401).json({ error: 'Token invalidated' });
+  }
+  
+  req.user = payload;
+  next();
+}
+
+// On logout
+app.post('/api/logout', authenticateToken, async (req, res) => {
+  await incrementTokenVersion(req.user.userId);
+  res.json({ message: 'Logged out' });
+});
+```
+
+---
+
+## Security Best Practices
+
+### 1. Keep Secrets Secret
+
+```javascript
+// ❌ Don't hardcode secrets
+const JWT_SECRET = 'my-secret-key';
+
+// ✅ Use environment variables
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// Generate a strong secret
+// node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+### 2. Use Short Expiration Times
+
+```javascript
+// ❌ Too long
+{ expiresIn: '30d' }
+
+// ✅ Short for access tokens
+{ expiresIn: '15m' }
+
+// ✅ Use refresh tokens for long sessions
+```
+
+### 3. Validate Token Claims
+
+```javascript
+const payload = jwt.verify(token, JWT_SECRET, {
+  issuer: 'my-app',
+  audience: 'my-app-users',
+  algorithms: ['HS256']  // Prevent algorithm confusion attacks
+});
+```
+
+### 4. Don't Store Sensitive Data in JWTs
+
+```javascript
+// ❌ JWT payload is visible to anyone
+const token = jwt.sign({
+  userId: user.id,
+  password: user.password,    // Never!
+  creditCard: user.card       // Never!
+}, JWT_SECRET);
+
+// ✅ Only store non-sensitive identifiers
+const token = jwt.sign({
+  userId: user.id,
+  email: user.email,
+  role: user.role
+}, JWT_SECRET);
+```
+
+### 5. Use HTTPS
+
+Always use HTTPS in production to prevent token interception.
+
+---
+
+## Complete Example
+
+```javascript
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
+
+const app = express();
+app.use(express.json());
+app.use(cookieParser());
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const REFRESH_SECRET = process.env.REFRESH_SECRET;
+
+// Login
+app.post('/api/login', async (req, res) => {
+  const user = await authenticateUser(req.body.email, req.body.password);
+  
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  const accessToken = jwt.sign(
+    { userId: user.id, email: user.email },
+    JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+  
+  const refreshToken = jwt.sign(
+    { userId: user.id },
+    REFRESH_SECRET,
+    { expiresIn: '7d' }
+  );
+  
+  await saveRefreshToken(user.id, refreshToken);
+  
+  res.cookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
+  
+  res.json({ accessToken, user: { id: user.id, email: user.email } });
+});
+
+// Refresh
+app.post('/api/refresh', async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+  
+  if (!refreshToken) {
+    return res.status(401).json({ error: 'Refresh token required' });
+  }
+  
+  try {
+    const payload = jwt.verify(refreshToken, REFRESH_SECRET);
+    const isValid = await verifyRefreshToken(payload.userId, refreshToken);
+    
+    if (!isValid) {
+      return res.status(403).json({ error: 'Invalid refresh token' });
+    }
+    
+    const accessToken = jwt.sign(
+      { userId: payload.userId },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+    
+    res.json({ accessToken });
+  } catch (err) {
+    res.status(403).json({ error: 'Invalid refresh token' });
+  }
+});
+
+// Auth middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+  
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (err) {
+    res.status(403).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// Protected route
+app.get('/api/profile', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// Logout
+app.post('/api/logout', authenticateToken, async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+  if (refreshToken) {
+    await revokeRefreshToken(req.user.userId, refreshToken);
+  }
+  res.clearCookie('refreshToken');
+  res.json({ message: 'Logged out' });
+});
+
+app.listen(3000);
+```
+
+---
+
+## Quick Reference
+
+| Task | Code |
+|------|------|
+| Install JWT | `npm install jsonwebtoken` |
+| Generate token | `jwt.sign(payload, secret, { expiresIn: '7d' })` |
+| Verify token | `jwt.verify(token, secret)` |
+| Extract token from header | `req.headers.authorization?.split(' ')[1]` |
+| Send token (client) | `headers: { 'Authorization': 'Bearer ' + token }` |
+| Store in localStorage | `localStorage.setItem('token', token)` |
+| Short-lived access token | `{ expiresIn: '15m' }` |
+| Long-lived refresh token | `{ expiresIn: '7d' }` |
+| Decode without verifying | `jwt.decode(token)` |

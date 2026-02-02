@@ -1,0 +1,540 @@
+---
+title: Express Request Object
+description: Complete guide to extracting data from Express request objects - params, query, body, headers, and more
+---
+
+## The Request Object
+
+The `req` (request) object in Express represents the HTTP request and contains properties for the request query string, parameters, body, headers, and more.
+
+```javascript
+app.get('/api/users/:id', (req, res) => {
+  // req contains all information about the incoming request
+  console.log(req.method);    // 'GET'
+  console.log(req.url);        // '/api/users/123?sort=asc'
+  console.log(req.path);       // '/api/users/123'
+});
+```
+
+---
+
+## Route Parameters (`req.params`)
+
+Extract values from the URL path using route parameters.
+
+### Basic Parameters
+
+```javascript
+app.get('/users/:userId', (req, res) => {
+  const { userId } = req.params;
+  res.json({ userId }); // { userId: '123' }
+});
+
+// GET /users/123
+// req.params = { userId: '123' }
+```
+
+### Multiple Parameters
+
+```javascript
+app.get('/users/:userId/posts/:postId', (req, res) => {
+  const { userId, postId } = req.params;
+  res.json({ userId, postId });
+});
+
+// GET /users/123/posts/456
+// req.params = { userId: '123', postId: '456' }
+```
+
+### Optional Parameters
+
+```javascript
+app.get('/users/:userId/posts/:postId?', (req, res) => {
+  const { userId, postId } = req.params;
+  
+  if (postId) {
+    res.json({ userId, postId });
+  } else {
+    res.json({ userId, allPosts: true });
+  }
+});
+
+// GET /users/123/posts     → { userId: '123', allPosts: true }
+// GET /users/123/posts/456 → { userId: '123', postId: '456' }
+```
+
+### Parameters with Regex
+
+```javascript
+// Only match numeric IDs
+app.get('/users/:id(\\d+)', (req, res) => {
+  res.json({ id: req.params.id });
+});
+
+// GET /users/123   → matches
+// GET /users/abc   → doesn't match
+```
+
+---
+
+## Query Parameters (`req.query`)
+
+Extract query string parameters from the URL (everything after `?`).
+
+### Basic Query Parameters
+
+```javascript
+app.get('/search', (req, res) => {
+  const { q, page, limit } = req.query;
+  res.json({ query: q, page, limit });
+});
+
+// GET /search?q=javascript&page=2&limit=10
+// req.query = { q: 'javascript', page: '2', limit: '10' }
+```
+
+### Type Conversion
+
+Query parameters are always strings. Convert them as needed:
+
+```javascript
+app.get('/products', (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const minPrice = parseFloat(req.query.minPrice) || 0;
+  const inStock = req.query.inStock === 'true';
+  
+  res.json({ page, limit, minPrice, inStock });
+});
+
+// GET /products?page=2&limit=50&minPrice=19.99&inStock=true
+// After conversion: { page: 2, limit: 50, minPrice: 19.99, inStock: true }
+```
+
+### Array Query Parameters
+
+```javascript
+app.get('/filter', (req, res) => {
+  const tags = req.query.tags;
+  
+  // Single value: string
+  // Multiple values: array
+  const tagArray = Array.isArray(tags) ? tags : [tags];
+  
+  res.json({ tags: tagArray });
+});
+
+// GET /filter?tags=javascript
+// req.query.tags = 'javascript'
+
+// GET /filter?tags=javascript&tags=nodejs
+// req.query.tags = ['javascript', 'nodejs']
+```
+
+### Nested Query Parameters
+
+With `express.urlencoded({ extended: true })`:
+
+```javascript
+app.get('/advanced', (req, res) => {
+  console.log(req.query);
+  res.json(req.query);
+});
+
+// GET /advanced?filter[status]=active&filter[role]=admin
+// req.query = { filter: { status: 'active', role: 'admin' } }
+```
+
+---
+
+## Request Body (`req.body`)
+
+Extract data from the request body. Requires middleware.
+
+### JSON Bodies
+
+```javascript
+app.use(express.json());
+
+app.post('/api/users', (req, res) => {
+  const { name, email, age } = req.body;
+  res.json({ created: { name, email, age } });
+});
+```
+
+**Client request:**
+
+```javascript
+fetch('/api/users', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'John', email: 'john@example.com', age: 30 })
+});
+```
+
+### URL-Encoded Bodies (Form Data)
+
+```javascript
+app.use(express.urlencoded({ extended: true }));
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  res.json({ username });
+});
+```
+
+**HTML Form:**
+
+```html
+<form action="/login" method="POST">
+  <input name="username" value="john" />
+  <input name="password" type="password" value="secret" />
+  <button type="submit">Login</button>
+</form>
+```
+
+---
+
+## Headers (`req.headers`)
+
+Access HTTP headers sent by the client.
+
+### Common Headers
+
+```javascript
+app.get('/info', (req, res) => {
+  const userAgent = req.headers['user-agent'];
+  const contentType = req.headers['content-type'];
+  const authorization = req.headers['authorization'];
+  const customHeader = req.headers['x-custom-header'];
+  
+  res.json({ userAgent, contentType, authorization, customHeader });
+});
+```
+
+### Helper Methods
+
+```javascript
+app.get('/api/data', (req, res) => {
+  // Get a specific header (case-insensitive)
+  const auth = req.get('Authorization');
+  const accept = req.get('Accept');
+  
+  res.json({ auth, accept });
+});
+```
+
+### Authorization Header
+
+```javascript
+app.get('/protected', (req, res) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No authorization header' });
+  }
+  
+  // Bearer token format: "Bearer <token>"
+  const token = authHeader.split(' ')[1];
+  
+  res.json({ token });
+});
+
+// Request header: Authorization: Bearer abc123xyz
+// token = 'abc123xyz'
+```
+
+---
+
+## Cookies (`req.cookies`)
+
+Access cookies sent by the browser. Requires `cookie-parser` middleware.
+
+```javascript
+import cookieParser from 'cookie-parser';
+
+app.use(cookieParser());
+
+app.get('/profile', (req, res) => {
+  const sessionToken = req.cookies.sessionToken;
+  const preferences = req.cookies.preferences;
+  
+  res.json({ sessionToken, preferences });
+});
+```
+
+### Signed Cookies
+
+```javascript
+app.use(cookieParser('secret-key'));
+
+app.get('/secure', (req, res) => {
+  // Signed cookies are in req.signedCookies
+  const userId = req.signedCookies.userId;
+  
+  res.json({ userId });
+});
+```
+
+---
+
+## Request Method & Path
+
+### HTTP Method
+
+```javascript
+app.all('/api/*', (req, res, next) => {
+  console.log(`Method: ${req.method}`); // GET, POST, PUT, DELETE, etc.
+  next();
+});
+```
+
+### Path Information
+
+```javascript
+app.get('/api/users/123', (req, res) => {
+  console.log(req.path);           // '/api/users/123'
+  console.log(req.originalUrl);    // '/api/users/123?sort=asc'
+  console.log(req.baseUrl);        // '' (or router mount path)
+  console.log(req.url);            // '/api/users/123?sort=asc'
+  
+  res.send('OK');
+});
+```
+
+---
+
+## Request Content Type
+
+### Check Content Type
+
+```javascript
+app.post('/upload', (req, res) => {
+  if (req.is('application/json')) {
+    // Handle JSON
+  } else if (req.is('application/x-www-form-urlencoded')) {
+    // Handle form data
+  } else if (req.is('multipart/form-data')) {
+    // Handle file upload
+  }
+  
+  res.send('OK');
+});
+```
+
+### Accept Header
+
+Check what the client accepts:
+
+```javascript
+app.get('/data', (req, res) => {
+  if (req.accepts('json')) {
+    res.json({ data: 'JSON response' });
+  } else if (req.accepts('html')) {
+    res.send('<h1>HTML response</h1>');
+  } else {
+    res.status(406).send('Not Acceptable');
+  }
+});
+```
+
+---
+
+## IP Address & Hostname
+
+### Client IP Address
+
+```javascript
+app.get('/', (req, res) => {
+  const ip = req.ip;                    // Client IP
+  const ips = req.ips;                  // Proxy IPs (if trust proxy enabled)
+  
+  res.json({ ip, ips });
+});
+```
+
+### Trust Proxy
+
+When behind a reverse proxy (like Nginx):
+
+```javascript
+app.set('trust proxy', true);
+
+app.get('/', (req, res) => {
+  const realIp = req.ip;  // Now gets real client IP from X-Forwarded-For
+  res.json({ realIp });
+});
+```
+
+### Hostname
+
+```javascript
+app.get('/', (req, res) => {
+  const hostname = req.hostname;  // 'example.com' (without port)
+  const host = req.get('host');   // 'example.com:3000' (with port)
+  
+  res.json({ hostname, host });
+});
+```
+
+---
+
+## Protocol & Security
+
+### Protocol Information
+
+```javascript
+app.get('/', (req, res) => {
+  const protocol = req.protocol;        // 'http' or 'https'
+  const isSecure = req.secure;          // true if HTTPS
+  const isXhr = req.xhr;                // true if AJAX request
+  
+  res.json({ protocol, isSecure, isXhr });
+});
+```
+
+---
+
+## File Uploads (with Multer)
+
+For `multipart/form-data` (file uploads), use the `multer` middleware:
+
+```javascript
+import multer from 'multer';
+
+const upload = multer({ dest: 'uploads/' });
+
+// Single file
+app.post('/upload', upload.single('file'), (req, res) => {
+  const file = req.file;
+  const body = req.body;
+  
+  res.json({
+    filename: file.filename,
+    originalName: file.originalname,
+    size: file.size,
+    mimetype: file.mimetype,
+    path: file.path,
+    body
+  });
+});
+
+// Multiple files
+app.post('/upload-multiple', upload.array('photos', 10), (req, res) => {
+  const files = req.files;
+  res.json({ count: files.length, files });
+});
+
+// Multiple fields
+app.post('/profile', upload.fields([
+  { name: 'avatar', maxCount: 1 },
+  { name: 'gallery', maxCount: 8 }
+]), (req, res) => {
+  const avatar = req.files.avatar[0];
+  const gallery = req.files.gallery;
+  
+  res.json({ avatar, galleryCount: gallery.length });
+});
+```
+
+---
+
+## Custom Properties
+
+You can attach custom properties to `req` for use in later middleware:
+
+```javascript
+// Authentication middleware
+app.use((req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  if (token) {
+    const user = verifyToken(token);
+    req.user = user;  // Attach user to request
+  }
+  
+  next();
+});
+
+// Use in route handler
+app.get('/profile', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  res.json({ user: req.user });
+});
+```
+
+---
+
+## Complete Example
+
+```javascript
+import express from 'express';
+import cookieParser from 'cookie-parser';
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+app.get('/api/users/:userId/posts/:postId?', (req, res) => {
+  // Route parameters
+  const { userId, postId } = req.params;
+  
+  // Query parameters
+  const { page = 1, limit = 10, sort = 'desc' } = req.query;
+  
+  // Headers
+  const authorization = req.headers.authorization;
+  const userAgent = req.get('User-Agent');
+  
+  // Cookies
+  const sessionId = req.cookies.sessionId;
+  
+  // Request info
+  const method = req.method;
+  const path = req.path;
+  const ip = req.ip;
+  
+  res.json({
+    params: { userId, postId },
+    query: { page: parseInt(page), limit: parseInt(limit), sort },
+    headers: { authorization, userAgent },
+    cookies: { sessionId },
+    meta: { method, path, ip }
+  });
+});
+
+app.post('/api/users', (req, res) => {
+  // Request body
+  const { name, email, age } = req.body;
+  
+  res.status(201).json({ created: { name, email, age } });
+});
+
+app.listen(3000);
+```
+
+---
+
+## Quick Reference
+
+| Data Source | Access Method | Example |
+|-------------|---------------|---------|
+| Route parameters | `req.params` | `req.params.id` |
+| Query string | `req.query` | `req.query.search` |
+| Request body (JSON) | `req.body` | `req.body.name` |
+| Request body (form) | `req.body` | `req.body.username` |
+| Headers | `req.headers` or `req.get()` | `req.get('Authorization')` |
+| Cookies | `req.cookies` | `req.cookies.token` |
+| Files (multer) | `req.file` / `req.files` | `req.file.filename` |
+| HTTP method | `req.method` | `'GET'`, `'POST'`, etc. |
+| URL path | `req.path` | `'/api/users'` |
+| Full URL | `req.originalUrl` | `'/api/users?page=1'` |
+| Client IP | `req.ip` | `'192.168.1.1'` |
+| Hostname | `req.hostname` | `'example.com'` |
+| Protocol | `req.protocol` | `'http'` or `'https'` |
+| Is HTTPS? | `req.secure` | `true` or `false` |
