@@ -153,6 +153,7 @@ export const navigation: NavSection[] = [
             { title: "Cookie Authentication", slug: "nodejs/cookie-authentication" },
             { title: "Token Authentication", slug: "nodejs/token-authentication" },
             { title: "Full-Stack Authentication", slug: "nodejs/authentication-full-stack" },
+            { title: "Async Generators & Yield", slug: "nodejs/async-generators" },
             { title: "Buffers", slug: "nodejs/buffers" },
             { title: "Streams", slug: "nodejs/streams" },
             { title: "File System", slug: "nodejs/file-system" },

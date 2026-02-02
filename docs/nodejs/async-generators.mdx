@@ -1,0 +1,682 @@
+---
+title: Async Generators & Yield
+description: Understanding generator functions, async generators, yield keyword, and the importance of the asterisk (*) syntax
+---
+
+## What are Generator Functions?
+
+Generator functions are special functions that can pause execution and resume later, producing a sequence of values over time instead of computing all values at once.
+
+### Basic Syntax
+
+The asterisk (`*`) after the `function` keyword marks a function as a generator:
+
+```javascript
+function* simpleGenerator() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+const gen = simpleGenerator();
+console.log(gen.next()); // { value: 1, done: false }
+console.log(gen.next()); // { value: 2, done: false }
+console.log(gen.next()); // { value: 3, done: false }
+console.log(gen.next()); // { value: undefined, done: true }
+```
+
+**Key points:**
+- `function*` declares a generator function
+- `yield` pauses execution and returns a value
+- Calling the generator returns an **iterator object**
+- Use `.next()` to resume and get the next value
+
+---
+
+## The Asterisk (`*`) - Why It's Important
+
+The `*` is **required** to create a generator function. It can be placed in different positions (all are valid):
+
+```javascript
+// All of these work:
+function* generator() {}
+function *generator() {}
+function * generator() {}
+
+// For methods:
+const obj = {
+  *generator() {},
+  * generator() {}
+};
+
+// Arrow functions CANNOT be generators
+const gen = *() => {};  // ❌ Syntax error
+```
+
+**Without the `*`, it's a regular function:**
+
+```javascript
+function notAGenerator() {
+  yield 1;  // ❌ SyntaxError: Unexpected number
+}
+
+function* isAGenerator() {
+  yield 1;  // ✅ Works
+}
+```
+
+---
+
+## The `yield` Keyword
+
+`yield` pauses the generator and returns a value to the caller. Execution resumes when `.next()` is called again.
+
+### Basic Yield
+
+```javascript
+function* countToThree() {
+  console.log('Starting...');
+  yield 1;
+  console.log('After first yield');
+  yield 2;
+  console.log('After second yield');
+  yield 3;
+  console.log('Done');
+}
+
+const counter = countToThree();
+
+counter.next(); // Logs: "Starting..." → returns { value: 1, done: false }
+counter.next(); // Logs: "After first yield" → returns { value: 2, done: false }
+counter.next(); // Logs: "After second yield" → returns { value: 3, done: false }
+counter.next(); // Logs: "Done" → returns { value: undefined, done: true }
+```
+
+### Yield with Expressions
+
+```javascript
+function* mathGenerator() {
+  yield 1 + 1;           // Evaluates expression before yielding
+  yield Math.random();   // Can yield function results
+  yield [1, 2, 3];       // Can yield any value
+  yield { key: 'value' };
+}
+
+const gen = mathGenerator();
+console.log(gen.next().value); // 2
+console.log(gen.next().value); // Random number
+console.log(gen.next().value); // [1, 2, 3]
+console.log(gen.next().value); // { key: 'value' }
+```
+
+### Yield Receives Values
+
+You can pass values back into the generator via `.next()`:
+
+```javascript
+function* twoWayGenerator() {
+  const name = yield 'What is your name?';
+  const age = yield `Hello ${name}, what is your age?`;
+  return `${name} is ${age} years old`;
+}
+
+const gen = twoWayGenerator();
+
+console.log(gen.next().value);        // "What is your name?"
+console.log(gen.next('Alice').value); // "Hello Alice, what is your age?"
+console.log(gen.next(30).value);      // "Alice is 30 years old"
+```
+
+---
+
+## Iterating Over Generators
+
+Generators are iterable, so you can use `for...of`:
+
+```javascript
+function* numberGenerator() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+for (const num of numberGenerator()) {
+  console.log(num); // 1, 2, 3
+}
+
+// Or spread into an array
+const numbers = [...numberGenerator()]; // [1, 2, 3]
+```
+
+---
+
+## Async Generators
+
+Async generators combine generators with async/await, allowing you to `yield` promises and use `await` inside.
+
+### Syntax
+
+```javascript
+async function* asyncGenerator() {
+  yield await Promise.resolve(1);
+  yield await Promise.resolve(2);
+  yield await Promise.resolve(3);
+}
+```
+
+**Both `async` and `*` are required:**
+
+| Syntax | Type |
+|--------|------|
+| `function* gen()` | Regular generator |
+| `async function gen()` | Async function (not generator) |
+| `async function* gen()` | Async generator ✅ |
+
+### Basic Example
+
+```javascript
+async function* fetchUsers() {
+  const users = ['Alice', 'Bob', 'Charlie'];
+  
+  for (const user of users) {
+    // Simulate async operation
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    yield user;
+  }
+}
+
+// Consuming async generator
+async function main() {
+  for await (const user of fetchUsers()) {
+    console.log(user); // Logs each user after 1 second delay
+  }
+}
+
+main();
+```
+
+**Notice:** Use `for await...of` to iterate over async generators.
+
+---
+
+## Practical Use Cases
+
+### 1. Streaming Large Files
+
+Process large files in chunks without loading everything into memory:
+
+```javascript
+import { createReadStream } from 'fs';
+
+async function* readFileInChunks(filePath) {
+  const stream = createReadStream(filePath, {
+    encoding: 'utf8',
+    highWaterMark: 64 * 1024 // 64KB chunks
+  });
+  
+  for await (const chunk of stream) {
+    yield chunk;
+  }
+}
+
+// Usage
+async function processLargeFile() {
+  let totalSize = 0;
+  
+  for await (const chunk of readFileInChunks('large-file.txt')) {
+    totalSize += chunk.length;
+    console.log(`Processed ${chunk.length} bytes`);
+  }
+  
+  console.log(`Total: ${totalSize} bytes`);
+}
+```
+
+### 2. Paginated API Requests
+
+Fetch data from paginated APIs one page at a time:
+
+```javascript
+async function* fetchAllPages(baseUrl) {
+  let page = 1;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const response = await fetch(`${baseUrl}?page=${page}`);
+    const data = await response.json();
+    
+    if (data.items.length === 0) {
+      hasMore = false;
+    } else {
+      yield data.items;
+      page++;
+    }
+  }
+}
+
+// Usage
+async function getAllUsers() {
+  for await (const users of fetchAllPages('https://api.example.com/users')) {
+    console.log(`Processing ${users.length} users from this page`);
+    // Process users...
+  }
+}
+```
+
+### 3. Database Cursor Iteration
+
+Process large database result sets efficiently:
+
+```javascript
+async function* queryDatabase(query) {
+  const pageSize = 100;
+  let offset = 0;
+  
+  while (true) {
+    const results = await db.query(
+      `${query} LIMIT ${pageSize} OFFSET ${offset}`
+    );
+    
+    if (results.length === 0) break;
+    
+    for (const row of results) {
+      yield row;
+    }
+    
+    offset += pageSize;
+  }
+}
+
+// Usage
+async function processAllOrders() {
+  for await (const order of queryDatabase('SELECT * FROM orders')) {
+    await processOrder(order);
+  }
+}
+```
+
+### 4. Real-Time Data Streams
+
+Generate infinite streams of data:
+
+```javascript
+async function* realTimeStockPrices(symbol) {
+  while (true) {
+    const price = await fetchStockPrice(symbol);
+    yield { symbol, price, timestamp: Date.now() };
+    
+    // Wait 5 seconds before next update
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+}
+
+// Usage - can stop anytime
+async function monitorStock() {
+  const priceStream = realTimeStockPrices('AAPL');
+  
+  for await (const data of priceStream) {
+    console.log(`${data.symbol}: $${data.price}`);
+    
+    // Stop after 10 iterations
+    if (++count >= 10) break;
+  }
+}
+```
+
+### 5. Directory Tree Traversal
+
+Recursively walk directory tree, yielding files as you find them:
+
+```javascript
+import { readdir, stat } from 'fs/promises';
+import { join } from 'path';
+
+async function* walkDirectory(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    
+    if (entry.isDirectory()) {
+      // Recursively yield from subdirectory
+      yield* walkDirectory(fullPath);
+    } else {
+      yield fullPath;
+    }
+  }
+}
+
+// Usage
+async function findAllJsFiles(rootDir) {
+  for await (const filePath of walkDirectory(rootDir)) {
+    if (filePath.endsWith('.js')) {
+      console.log(filePath);
+    }
+  }
+}
+```
+
+**Notice:** `yield*` delegates to another generator (yields all its values).
+
+---
+
+## `yield*` - Delegating to Another Generator
+
+`yield*` yields all values from another iterable:
+
+```javascript
+function* generator1() {
+  yield 1;
+  yield 2;
+}
+
+function* generator2() {
+  yield* generator1(); // Yield all values from generator1
+  yield 3;
+  yield 4;
+}
+
+console.log([...generator2()]); // [1, 2, 3, 4]
+```
+
+### With Async Generators
+
+```javascript
+async function* fetchUserData(userId) {
+  const user = await fetchUser(userId);
+  yield user;
+  
+  const posts = await fetchUserPosts(userId);
+  yield* posts; // Yield each post
+}
+```
+
+---
+
+## Generator Methods
+
+### `.next(value)`
+
+Resume execution and optionally pass a value:
+
+```javascript
+function* gen() {
+  const x = yield 'first';
+  console.log('Received:', x);
+  yield 'second';
+}
+
+const g = gen();
+g.next();        // { value: 'first', done: false }
+g.next('hello'); // Logs: "Received: hello" → { value: 'second', done: false }
+```
+
+### `.return(value)`
+
+Terminate the generator and return a value:
+
+```javascript
+function* gen() {
+  yield 1;
+  yield 2;
+  yield 3;
+}
+
+const g = gen();
+g.next();           // { value: 1, done: false }
+g.return('stopped'); // { value: 'stopped', done: true }
+g.next();           // { value: undefined, done: true }
+```
+
+### `.throw(error)`
+
+Throw an error inside the generator:
+
+```javascript
+function* gen() {
+  try {
+    yield 1;
+    yield 2;
+  } catch (err) {
+    console.log('Caught:', err.message);
+  }
+  yield 3;
+}
+
+const g = gen();
+g.next();                    // { value: 1, done: false }
+g.throw(new Error('Oops!')); // Logs: "Caught: Oops!" → { value: 3, done: false }
+```
+
+---
+
+## Error Handling in Async Generators
+
+### Try-Catch Inside Generator
+
+```javascript
+async function* safeGenerator() {
+  try {
+    const data = await fetchData();
+    yield data;
+  } catch (err) {
+    console.error('Error in generator:', err);
+    yield null; // Yield fallback value
+  }
+}
+```
+
+### Try-Catch During Iteration
+
+```javascript
+async function processItems() {
+  try {
+    for await (const item of asyncGenerator()) {
+      await processItem(item);
+    }
+  } catch (err) {
+    console.error('Error during iteration:', err);
+  }
+}
+```
+
+---
+
+## Memory Efficiency
+
+Generators are memory-efficient because they produce values **on demand**:
+
+```javascript
+// ❌ Regular function - loads everything into memory
+function getAllNumbers() {
+  const numbers = [];
+  for (let i = 0; i < 1_000_000; i++) {
+    numbers.push(i);
+  }
+  return numbers; // 1 million numbers in memory!
+}
+
+// ✅ Generator - only current value in memory
+function* generateNumbers() {
+  for (let i = 0; i < 1_000_000; i++) {
+    yield i; // One number at a time
+  }
+}
+
+// Process without loading all into memory
+for (const num of generateNumbers()) {
+  if (num > 100) break; // Stop early, saved memory!
+}
+```
+
+---
+
+## Infinite Sequences
+
+Generators can represent infinite sequences:
+
+```javascript
+function* infiniteSequence() {
+  let i = 0;
+  while (true) {
+    yield i++;
+  }
+}
+
+// Take only what you need
+const gen = infiniteSequence();
+console.log(gen.next().value); // 0
+console.log(gen.next().value); // 1
+console.log(gen.next().value); // 2
+
+// Or use helper
+function* take(n, iterable) {
+  let count = 0;
+  for (const value of iterable) {
+    if (count++ >= n) break;
+    yield value;
+  }
+}
+
+console.log([...take(5, infiniteSequence())]); // [0, 1, 2, 3, 4]
+```
+
+---
+
+## Real-World Example: Express.js Streaming Response
+
+Stream data to the client as it becomes available:
+
+```javascript
+import express from 'express';
+
+const app = express();
+
+async function* generateUserReports() {
+  const userIds = await getUserIds();
+  
+  for (const userId of userIds) {
+    const report = await generateReport(userId);
+    yield JSON.stringify(report) + '\n';
+  }
+}
+
+app.get('/api/reports', async (req, res) => {
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  
+  try {
+    for await (const chunk of generateUserReports()) {
+      res.write(chunk);
+    }
+    res.end();
+  } catch (err) {
+    res.status(500).json({ error: 'Report generation failed' });
+  }
+});
+```
+
+---
+
+## Common Patterns
+
+### 1. Retry Logic with Backoff
+
+```javascript
+async function* retryWithBackoff(fn, maxRetries = 3) {
+  let delay = 1000;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      yield { success: true, result };
+      break;
+    } catch (err) {
+      yield { success: false, error: err, attempt };
+      
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+      }
+    }
+  }
+}
+
+// Usage
+for await (const attempt of retryWithBackoff(() => fetchData())) {
+  if (attempt.success) {
+    console.log('Success:', attempt.result);
+  } else {
+    console.log(`Attempt ${attempt.attempt} failed:`, attempt.error.message);
+  }
+}
+```
+
+### 2. Rate-Limited API Calls
+
+```javascript
+async function* rateLimitedRequests(urls, requestsPerSecond = 10) {
+  const delay = 1000 / requestsPerSecond;
+  
+  for (const url of urls) {
+    const startTime = Date.now();
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    yield data;
+    
+    const elapsed = Date.now() - startTime;
+    const waitTime = Math.max(0, delay - elapsed);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+}
+```
+
+### 3. Data Transformation Pipeline
+
+```javascript
+async function* processDataPipeline(items) {
+  for (const item of items) {
+    // Step 1: Fetch additional data
+    const enriched = await enrichItem(item);
+    
+    // Step 2: Transform
+    const transformed = transformItem(enriched);
+    
+    // Step 3: Validate
+    if (isValid(transformed)) {
+      yield transformed;
+    }
+  }
+}
+```
+
+---
+
+## Quick Reference
+
+| Feature | Syntax | Description |
+|---------|--------|-------------|
+| Regular generator | `function* gen()` | Returns iterator |
+| Async generator | `async function* gen()` | Returns async iterator |
+| Yield value | `yield value` | Pause and return value |
+| Yield promise | `yield await promise` | Wait for promise, then yield |
+| Delegate | `yield* otherGen()` | Yield all from another generator |
+| Iterate | `for (const x of gen())` | Regular generator |
+| Iterate async | `for await (const x of gen())` | Async generator |
+| Get next value | `gen.next()` | Resume execution |
+| Pass value in | `gen.next(value)` | Send value to `yield` |
+| Force return | `gen.return(value)` | Terminate generator |
+| Throw error | `gen.throw(error)` | Throw inside generator |
+
+---
+
+## Key Takeaways
+
+1. **The `*` is mandatory** for generator functions
+2. **`yield` pauses execution** and can receive values
+3. **Generators are lazy** - values computed on demand
+4. **Memory efficient** - process large datasets without loading all into memory
+5. **Async generators** combine `async/await` with generators
+6. **Use `for await...of`** to iterate async generators
+7. **Perfect for streams** - files, APIs, databases, real-time data
+8. **`yield*` delegates** to another generator/iterable
