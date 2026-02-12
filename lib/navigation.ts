@@ -158,6 +158,7 @@ export const navigation: NavSection[] = [
             { title: "Streams", slug: "nodejs/streams" },
             { title: "File System", slug: "nodejs/file-system" },
             { title: "Paths", slug: "nodejs/paths" },
+            { title: "CLI Tools", slug: "nodejs/cli-tools" },
         ],
     },
     {
@@ -165,6 +166,7 @@ export const navigation: NavSection[] = [
         items: [
             { title: "AbortController", slug: "random/abort-controller" },
             { title: "Linux Commands", slug: "random/linux-commands" },
+            { title: "File Permissions", slug: "random/file-permissions" },
             { title: "SSH", slug: "random/ssh" },
             { title: "tsconfig.json", slug: "random/tsconfig" },
             { title: "WebSockets", slug: "random/websockets" },

@@ -1,0 +1,293 @@
+---
+title: CLI Tools
+description: How Node.js scripts become CLI commands — shebang, execute permissions, bin field, and pnpm link
+---
+
+## Why Scripts Need Execute Permission
+
+When you create a file — any file — Linux has no idea what it is. It could be a photo, a config file, a JavaScript script, a random text file. Linux doesn't assume anything.
+
+By default, a new file gets `644` permissions (`rw-r--r--`) — you can read and write it, others can read it. But **nobody can run it as a program.** The `x` (execute) bit is Linux's way of saying *"this file is allowed to be executed as a program."*
+
+Without the execute bit:
+
+```bash
+./myscript.js
+# Permission denied
+```
+
+You fix it with `chmod`:
+
+```bash
+chmod +x myscript.js
+```
+
+Now Linux knows: this file can be run.
+
+---
+
+## The Shebang Line
+
+A `.js` file isn't a compiled binary. Your CPU can't directly run JavaScript. So how does `chmod +x` actually help?
+
+This is where the **shebang line** comes in. At the very top of your script, you add:
+
+```js
+#!/usr/bin/env node
+```
+
+That `#!` on the first line is called a **shebang** (or hashbang). When Linux sees an executable file, it reads the first line. If it starts with `#!`, Linux reads the path after it and uses **that program** to run the file.
+
+### What Actually Happens
+
+```
+you type:           ./myscript.js
+Linux checks:       x bit is set → okay, it's executable
+Linux reads line 1: #!/usr/bin/env node
+Linux actually runs: node ./myscript.js
+```
+
+The `x` bit and the shebang line work together — you need **both**. The `x` bit is the *permission*, the shebang is the *instruction* on how to run it.
+
+### Why `#!/usr/bin/env node` and Not `#!/usr/bin/node`?
+
+The `env` command searches your `PATH` for the `node` binary. This is more portable because `node` might be installed in different locations on different systems (`/usr/local/bin/node`, `/home/user/.nvm/versions/node/.../bin/node`, etc.). Using `env` finds whichever one is active.
+
+```bash
+#!/usr/bin/node         # Hardcoded path — breaks if node is elsewhere
+#!/usr/bin/env node     # Searches PATH — works on any system
+```
+
+---
+
+## The `bin` Field in package.json
+
+When you install a package globally with `npm install -g` or run something via `npx`, how does your terminal know where to find the command? That's what the `bin` field does.
+
+```json
+{
+  "name": "my-cli-tool",
+  "version": "1.0.0",
+  "bin": {
+    "mytool": "./src/cli.js"
+  }
+}
+```
+
+This tells npm/pnpm: *"when someone installs this package, create a command called `mytool` that points to `./src/cli.js`."*
+
+### Single Command Shorthand
+
+If your package only exposes one command and you want it named after the package:
+
+```json
+{
+  "name": "mytool",
+  "bin": "./src/cli.js"
+}
+```
+
+This is equivalent to `"bin": { "mytool": "./src/cli.js" }`.
+
+### Multiple Commands
+
+A single package can expose multiple commands:
+
+```json
+{
+  "name": "my-toolkit",
+  "bin": {
+    "generate": "./src/generate.js",
+    "validate": "./src/validate.js",
+    "deploy": "./src/deploy.js"
+  }
+}
+```
+
+Each key becomes a separate command in the terminal.
+
+---
+
+## What Happens During `npm install`
+
+When you install a package that has a `bin` field, npm creates a **symlink** inside `node_modules/.bin/` pointing to your script.
+
+```
+node_modules/
+  .bin/
+    mytool → ../my-cli-tool/src/cli.js    ← symlink
+  my-cli-tool/
+    src/
+      cli.js                               ← the actual file
+```
+
+When you run `npx mytool`, npm looks in `node_modules/.bin/`, finds the symlink, follows it to `cli.js`, and executes it.
+
+The execution chain:
+
+```
+npx mytool
+→ terminal finds node_modules/.bin/mytool
+→ that's a symlink pointing to ./src/cli.js
+→ Linux tries to execute cli.js
+→ reads the shebang: #!/usr/bin/env node
+→ runs: node ./src/cli.js
+```
+
+---
+
+## `pnpm link` — Local Development
+
+During development, you don't want to publish your package to npm every time you make a change. `pnpm link` (or `npm link`) makes your locally developed CLI available system-wide **as if** it were installed globally.
+
+### How It Works
+
+```bash
+cd ~/projects/my-cli-tool
+pnpm link --global
+```
+
+What pnpm does:
+
+1. Reads your `package.json` `bin` field
+2. Creates a symlink in your global bin directory (e.g., `~/.local/share/pnpm/mytool`)
+3. That symlink points back to your project's `./src/cli.js`
+
+Now you can run `mytool` from anywhere on your system, and it executes your local development code.
+
+### Unlinking
+
+When you're done testing:
+
+```bash
+pnpm unlink --global
+```
+
+This removes the global symlink.
+
+### npm link (Alternative)
+
+The npm equivalent works the same way:
+
+```bash
+cd ~/projects/my-cli-tool
+npm link            # creates global symlink
+
+# In another project that wants to use it locally:
+cd ~/projects/other-app
+npm link my-cli-tool    # creates local symlink to your dev version
+```
+
+---
+
+## The Full Chain
+
+All of these pieces work together. Remove any one and the CLI breaks in a different way:
+
+```
+package.json bin field         → tells the package manager what to expose as a command
+pnpm link / npm install        → creates the symlink so your terminal can find it
+shebang (#!/usr/bin/env node)  → tells Linux to use node to run the file
+chmod +x                       → gives Linux permission to execute the file at all
+```
+
+### A Complete Example
+
+Here's a minimal CLI tool from scratch:
+
+**1. Create the project:**
+
+```bash
+mkdir my-cli && cd my-cli
+npm init -y
+```
+
+**2. Create the entry file:**
+
+```js
+// src/cli.js
+#!/usr/bin/env node
+
+const args = process.argv.slice(2);
+const name = args[0] || 'world';
+
+console.log(`Hello, ${name}!`);
+```
+
+**3. Add the bin field:**
+
+```json
+{
+  "name": "greet",
+  "version": "1.0.0",
+  "bin": {
+    "greet": "./src/cli.js"
+  }
+}
+```
+
+**4. Make it executable:**
+
+```bash
+chmod +x src/cli.js
+```
+
+**5. Link it globally:**
+
+```bash
+pnpm link --global
+```
+
+**6. Use it:**
+
+```bash
+greet Alice
+# Hello, Alice!
+
+greet
+# Hello, world!
+```
+
+Without step 4 (`chmod +x`), pnpm can link it fine — but the moment you actually try to *run* the command, Linux hits the permission wall.
+
+---
+
+## Troubleshooting
+
+### `Permission denied` When Running Your CLI
+
+Your script file is missing the execute bit:
+
+```bash
+chmod +x ./src/cli.js
+```
+
+### `command not found` After Linking
+
+The global bin directory isn't in your `PATH`. Check where pnpm/npm is linking to:
+
+```bash
+pnpm bin --global       # shows pnpm's global bin path
+npm bin --global        # shows npm's global bin path
+```
+
+Make sure that path is in your shell's `PATH` variable (in `~/.zshrc` or `~/.bashrc`).
+
+### `env: node: No such file or directory`
+
+Node.js isn't installed, or it's not in your `PATH`. Verify with:
+
+```bash
+which node
+node --version
+```
+
+### Script Runs But Shebang Is Ignored
+
+The shebang **must be the very first line** of the file. No blank lines, no comments, no BOM characters before it:
+
+```js
+#!/usr/bin/env node     ← must be line 1, character 1
+
+// rest of your code
+```

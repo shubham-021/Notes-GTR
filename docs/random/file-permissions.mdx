@@ -1,0 +1,256 @@
+---
+title: File Permissions
+description: Understanding Linux file permissions, the chmod command, and why they matter for SSH
+---
+
+## Why Permissions Exist
+
+Linux is a **multi-user operating system**. Multiple people — and multiple background services — can be logged in and running processes on the same machine at the same time. Permissions are the fundamental mechanism that keeps everyone isolated from each other.
+
+Every file and directory in Linux has an **owner**, a **group**, and a set of **permissions** that control who can do what with it. `chmod` (change mode) is the command that sets those permissions.
+
+---
+
+## The Three Entities
+
+For any file, Linux asks: *who is trying to access this?*
+
+| Symbol | Entity | Who is it? |
+|--------|--------|------------|
+| `u` | **user** | The owner of the file — whoever created it |
+| `g` | **group** | A named collection of users that the file belongs to |
+| `o` | **others** | Everyone else on the system |
+
+### What Are Groups?
+
+Every user belongs to one or more groups. A group is just a named collection of users. For example, a company might have a group called `developers` with 5 people in it. If a file belongs to that group, all 5 people get the "group" permissions on that file.
+
+### A Concrete Example
+
+Imagine a shared Linux server with three people: Alice, Bob, and Carol. Alice and Bob are both in a group called `devs`. Carol is not.
+
+Alice creates a file with permissions `750`:
+
+```
+7   5   0
+u   g   o
+
+Alice → rwx  (full access, she owns it)
+devs  → r-x  (Bob can read and execute, but not modify)
+Carol → ---  (Carol gets nothing)
+```
+
+The same file, three different experiences — depending on *who* is asking.
+
+On your personal machine, you might think "it's just me, why does this matter?" But background services — like the SSH daemon (`sshd`) — also run as their own system users. That's why permissions still apply, even on a single-user machine.
+
+---
+
+## The Three Permission Types
+
+For each of those three entities, there are three possible permissions:
+
+| Symbol | Name | On a file | On a directory |
+|--------|------|-----------|----------------|
+| `r` | read | View file contents | List files inside |
+| `w` | write | Modify the file | Create or delete files inside |
+| `x` | execute | Run it as a program | Enter the directory (`cd` into it) |
+
+The `x` permission behaves differently for files and directories. For a file, it means "this file can be executed as a program." For a directory, it means "you can `cd` into this and access its contents."
+
+---
+
+## The Octal (Numeric) System
+
+Each permission has a numeric value:
+
+```
+r = 4
+w = 2
+x = 1
+```
+
+You **add them together** for each entity to get a single digit:
+
+```
+rwx = 4 + 2 + 1 = 7
+rw- = 4 + 2 + 0 = 6
+r-x = 4 + 0 + 1 = 5
+r-- = 4 + 0 + 0 = 4
+--- = 0 + 0 + 0 = 0
+```
+
+A three-digit number like `700` maps directly to user, group, and others:
+
+```
+7  0  0
+↑  ↑  ↑
+u  g  o
+
+user   = 7 (rwx) — full access
+group  = 0 (---) — no access
+others = 0 (---) — no access
+```
+
+Another example — `644`:
+
+```
+6  4  4
+↑  ↑  ↑
+u  g  o
+
+user   = 6 (rw-) — read and write
+group  = 4 (r--) — read only
+others = 4 (r--) — read only
+```
+
+This is the most common permission for regular files — the owner can edit it, everyone else can only read it.
+
+---
+
+## Reading Permissions with `ls -la`
+
+When you run `ls -la`, each file shows a 10-character permission string:
+
+```
+-rw-r--r--  1  alice  staff  1234  Feb 12  file.txt
+```
+
+The first 10 characters break down like this:
+
+| Position | Example | Meaning |
+|----------|---------|---------|
+| Character 1 | `-` | File type: `-` = file, `d` = directory, `l` = symlink |
+| Characters 2-4 | `rw-` | User (owner) permissions: read, write, no execute |
+| Characters 5-7 | `r--` | Group permissions: read only |
+| Characters 8-10 | `r--` | Others permissions: read only |
+
+### Reading It as a Number
+
+Take the permission string `rw-r--r--` and convert each triplet:
+
+```
+rw-  = 4 + 2 + 0 = 6
+r--  = 4 + 0 + 0 = 4
+r--  = 4 + 0 + 0 = 4
+
+Result: 644
+```
+
+---
+
+## Using chmod
+
+### Numeric Syntax
+
+The most common way to set permissions — specify the three-digit octal number:
+
+```bash
+chmod 755 script.sh      # rwxr-xr-x
+chmod 644 file.txt       # rw-r--r--
+chmod 600 secret.key     # rw-------
+chmod 700 .ssh           # rwx------
+```
+
+### Symbolic Syntax
+
+Instead of numbers, you can use letters to add or remove specific permissions:
+
+```bash
+chmod u+x file           # add execute for user
+chmod g+w file           # add write for group
+chmod o-r file           # remove read for others
+chmod go-rwx file        # remove all perms from group and others
+chmod u=rwx,go= .ssh    # user gets rwx, group and others get nothing (same as 700)
+chmod +x script.sh       # add execute for everyone
+```
+
+Both styles do the same thing — the numeric style is just faster once you know it.
+
+### Recursive Permissions
+
+Apply permissions to a directory and all its contents:
+
+```bash
+chmod -R 755 folder      # Apply to folder and everything inside
+```
+
+---
+
+## Common Permission Values
+
+| chmod | Symbolic | Meaning | Typical Use |
+|-------|----------|---------|-------------|
+| `777` | `rwxrwxrwx` | Everyone can do everything | Avoid — dangerous |
+| `755` | `rwxr-xr-x` | Owner full, others read + execute | Public directories, scripts |
+| `700` | `rwx------` | Owner only, full access | `~/.ssh/` directory |
+| `644` | `rw-r--r--` | Owner read/write, others read | Regular files |
+| `600` | `rw-------` | Owner read/write only | Private keys, `authorized_keys` |
+| `400` | `r--------` | Owner read-only | Keys you don't want to accidentally overwrite |
+
+---
+
+## Why SSH is Strict About Permissions
+
+SSH is a security-critical tool. It **refuses to work** if your key files or SSH directory are accessible by anyone other than you. This is intentional — if someone else can read your private key or your `authorized_keys` file, they could impersonate you or inject their own keys.
+
+SSH literally checks permissions before proceeding. If they're wrong, you get:
+
+```
+WARNING: UNPROTECTED PRIVATE KEY FILE!
+Permissions 0644 for '/home/user/.ssh/id_rsa' are too open.
+```
+
+### `chmod 700 ~/.ssh`
+
+```
+7  0  0
+u  g  o
+
+user   → rwx (can read, write, and enter the directory)
+group  → --- (zero access)
+others → --- (zero access)
+```
+
+The `.ssh` directory needs **execute (`x`)** so you can `cd` into it and access files inside. But nobody else — not your group, not others — should even be able to see what's in it.
+
+### `chmod 600 ~/.ssh/authorized_keys`
+
+```
+6  0  0
+u  g  o
+
+user   → rw- (can read and write — SSH daemon reads it, you can edit it)
+group  → --- (zero access)
+others → --- (zero access)
+```
+
+No execute needed here — it's a data file, not a script. But it must be readable only by you because this file controls **who is allowed to log in as you**. If anyone else could write to it, they could add their own public key and gain access to your account.
+
+### The Required SSH Permissions
+
+```bash
+chmod 700 ~/.ssh                     # Directory — owner only
+chmod 600 ~/.ssh/id_ed25519          # Private key — owner read/write
+chmod 644 ~/.ssh/id_ed25519.pub      # Public key — anyone can read
+chmod 644 ~/.ssh/known_hosts         # Known hosts — anyone can read
+chmod 644 ~/.ssh/config              # Config — anyone can read
+chmod 600 ~/.ssh/authorized_keys     # Auth keys — owner only
+```
+
+The pattern is simple: anything secret (`private key`, `authorized_keys`) gets `600`. Anything meant to be shared (`public key`, `config`) gets `644`. The directory itself gets `700`.
+
+---
+
+## chown — Changing Ownership
+
+Permissions define *what* can be done. Ownership defines *who* the "user" and "group" in those permissions actually are.
+
+```bash
+chown alice file.txt              # Change owner to alice
+chown alice:developers file.txt   # Change owner and group
+chown :developers file.txt        # Change group only
+chown -R alice:developers folder  # Recursive — apply to all contents
+```
+
+When you `chown alice:developers file.txt`, the `u` permissions apply to alice, and the `g` permissions apply to anyone in the `developers` group.
