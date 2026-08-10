@@ -1,0 +1,209 @@
+---
+title: Load Balancing Practical Guide - Custom
+description: A practical guide on building a custom HTTP load balancer from scratch in Node.js to understand algorithms.
+---
+
+## Introduction
+
+While using NGINX is the standard practice for production, building a rudimentary load balancer from scratch is an excellent way to deeply understand how load balancing algorithms operate under the hood.
+
+In this guide, we will write a custom Layer 7 (HTTP) load balancer in Node.js. It will receive incoming client requests and manually proxy them to a list of backend servers using different algorithms.
+
+## Prerequisites
+
+Initialize a Node.js project and install the `http-proxy` library, which provides the underlying machinery to forward HTTP requests.
+
+```bash
+mkdir custom-load-balancer
+cd custom-load-balancer
+npm init -y
+npm install http-proxy express
+```
+
+## 1. Setting Up Dummy Backend Servers
+
+First, let's create a script that spawns multiple backend servers simultaneously so we have something to balance traffic against.
+
+**backend.js**
+```javascript
+const express = require('express');
+
+function createServer(port) {
+    const app = express();
+    
+    // Track active connections for the Least Connections algorithm
+    let activeConnections = 0;
+
+    app.use((req, res, next) => {
+        activeConnections++;
+        
+        // When the response finishes, decrement the connection count
+        res.on('finish', () => {
+            activeConnections--;
+        });
+        next();
+    });
+
+    app.get('/', (req, res) => {
+        // Simulate some processing time
+        setTimeout(() => {
+            res.json({
+                serverPort: port,
+                activeConnections: activeConnections
+            });
+        }, Math.random() * 500); // Random delay between 0 and 500ms
+    });
+
+    app.listen(port, () => {
+        console.log(`Backend Server listening on port ${port}`);
+    });
+}
+
+// Start three servers
+createServer(3001);
+createServer(3002);
+createServer(3003);
+```
+
+## 2. Building the Load Balancer
+
+Now, we will build the actual load balancer. We will implement both the **Round Robin** and **Random** algorithms.
+
+**loadbalancer.js**
+```javascript
+const http = require('http');
+const httpProxy = require('http-proxy');
+
+// List of our backend servers
+const BACKENDS = [
+    { host: 'http://localhost:3001' },
+    { host: 'http://localhost:3002' },
+    { host: 'http://localhost:3003' }
+];
+
+// Initialize the proxy
+const proxy = httpProxy.createProxyServer({});
+
+// --- ALGORITHMS ---
+
+// 1. Round Robin
+let currentServerIndex = 0;
+function getNextServerRoundRobin() {
+    const target = BACKENDS[currentServerIndex];
+    // Move to the next index, looping back to 0 if we hit the end
+    currentServerIndex = (currentServerIndex + 1) % BACKENDS.length;
+    return target;
+}
+
+// 2. Random
+function getNextServerRandom() {
+    const randomIndex = Math.floor(Math.random() * BACKENDS.length);
+    return BACKENDS[randomIndex];
+}
+
+// --- THE SERVER ---
+
+const server = http.createServer((req, res) => {
+    // Choose which algorithm to use by uncommenting the one you want
+    
+    const target = getNextServerRoundRobin();
+    // const target = getNextServerRandom();
+
+    console.log(`Routing request for ${req.url} to -> ${target.host}`);
+
+    // Forward the request to the chosen target
+    proxy.web(req, res, { target: target.host }, (err) => {
+        console.error(`Error proxying to ${target.host}:`, err.message);
+        res.writeHead(502);
+        res.end('Bad Gateway: Backend server is down');
+    });
+});
+
+const PORT = 8080;
+server.listen(PORT, () => {
+    console.log(`Custom Load Balancer running on http://localhost:${PORT}`);
+});
+```
+
+## 3. Testing the Implementation
+
+Open two terminal windows. 
+
+In the first terminal, run the backend servers:
+```bash
+node backend.js
+```
+
+In the second terminal, run the load balancer:
+```bash
+node loadbalancer.js
+```
+
+Now, make multiple requests to the load balancer:
+
+```bash
+curl http://localhost:8080
+curl http://localhost:8080
+curl http://localhost:8080
+```
+
+If you selected the `getNextServerRoundRobin()` algorithm, you will see the logs cycle precisely through 3001, 3002, and 3003. 
+
+If you switch the code to use `getNextServerRandom()`, the distribution will be entirely unpredictable.
+
+## Advanced: Implementing Health Checks
+
+A critical feature of any load balancer is ensuring it does not send traffic to a dead server. Let's add a basic passive health check to our custom load balancer.
+
+Update the `proxy.web` error callback in `loadbalancer.js`:
+
+```javascript
+// Add a status flag to our backend objects
+const BACKENDS = [
+    { host: 'http://localhost:3001', isHealthy: true },
+    { host: 'http://localhost:3002', isHealthy: true },
+    { host: 'http://localhost:3003', isHealthy: true }
+];
+
+// Update Round Robin to skip unhealthy servers
+function getNextHealthyServer() {
+    let attempts = 0;
+    while (attempts < BACKENDS.length) {
+        const target = BACKENDS[currentServerIndex];
+        currentServerIndex = (currentServerIndex + 1) % BACKENDS.length;
+        
+        if (target.isHealthy) {
+            return target;
+        }
+        attempts++;
+    }
+    return null; // All servers are dead
+}
+
+const server = http.createServer((req, res) => {
+    const target = getNextHealthyServer();
+
+    if (!target) {
+        res.writeHead(503);
+        return res.end('Service Unavailable: All backends are down');
+    }
+
+    proxy.web(req, res, { target: target.host }, (err) => {
+        console.error(`[HEALTH CHECK FAILED] Marking ${target.host} as dead.`);
+        
+        // Mark server as unhealthy
+        target.isHealthy = false;
+        
+        res.writeHead(502);
+        res.end('Bad Gateway');
+
+        // Simple recovery mechanism: Try again after 10 seconds
+        setTimeout(() => {
+            console.log(`[RECOVERY] Marking ${target.host} as healthy again.`);
+            target.isHealthy = true;
+        }, 10000);
+    });
+});
+```
+
+With this code, if you manually kill one of the backend servers (e.g., stop the `backend.js` script and start it again with only two ports active), the load balancer will detect the connection failure, mark that specific server as dead, and seamlessly route subsequent traffic only to the remaining healthy servers.

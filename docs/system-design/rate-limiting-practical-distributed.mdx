@@ -1,0 +1,176 @@
+---
+title: Rate Limiting Practical Guide - Distributed
+description: A practical guide on implementing a distributed rate limiter using Redis and Node.js.
+---
+
+## Introduction
+
+As your application scales horizontally across multiple servers, a local in-memory rate limiter is no longer sufficient. Requests from the same user might be routed to different servers, effectively multiplying their allowed limit.
+
+To solve this, we must use a centralized, fast datastore. Redis is the industry standard for this task due to its low latency and atomic operations.
+
+## Prerequisites
+
+You will need Node.js and a running instance of Redis. You can run Redis locally using Docker:
+
+```bash
+docker run -d --name redis-rate-limiter -p 6379:6379 redis
+```
+
+Install the required packages in your project:
+
+```bash
+npm install express ioredis
+```
+
+## Basic Redis Implementation (Fixed Window)
+
+We will use the `ioredis` library to connect to Redis. Our first implementation will use the basic fixed window approach, leveraging Redis commands to increment a counter and set an expiration time.
+
+### The Middleware Code
+
+```javascript
+const express = require('express');
+const Redis = require('ioredis');
+
+const app = express();
+// Connect to local Redis instance
+const redis = new Redis({
+    host: '127.0.0.1',
+    port: 6379
+});
+
+const WINDOW_SIZE_IN_SECONDS = 60; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10;
+
+async function distributedRateLimiter(req, res, next) {
+    const clientIp = req.ip;
+    // Prefix the key to avoid collisions in Redis
+    const redisKey = `rate_limit:${clientIp}`;
+
+    try {
+        // Increment the count for this key. If it doesn't exist, Redis creates it and sets it to 1.
+        const requestCount = await redis.incr(redisKey);
+
+        if (requestCount === 1) {
+            // If this is the first request in the window, set the expiration time
+            await redis.expire(redisKey, WINDOW_SIZE_IN_SECONDS);
+        }
+
+        if (requestCount > MAX_REQUESTS_PER_WINDOW) {
+            return res.status(429).json({
+                error: 'Too Many Requests',
+                message: 'Distributed limit exceeded.'
+            });
+        }
+
+        // Add rate limiting headers for the client
+        res.setHeader('X-RateLimit-Limit', MAX_REQUESTS_PER_WINDOW);
+        res.setHeader('X-RateLimit-Remaining', Math.max(0, MAX_REQUESTS_PER_WINDOW - requestCount));
+        
+        next();
+    } catch (error) {
+        console.error('Redis error:', error);
+        // Best Practice: Fail open if Redis is down
+        next();
+    }
+}
+
+app.get('/api/distributed-data', distributedRateLimiter, (req, res) => {
+    res.json({ message: 'Success! Served by distributed system.' });
+});
+
+app.listen(3000, () => {
+    console.log('Server running on port 3000');
+});
+```
+
+### Explanation
+
+1. **`incr` command:** We use `redis.incr(redisKey)`. This is an atomic operation. It increments the value of the key by 1 and returns the new value. If the key does not exist, it sets it to 0 before incrementing.
+2. **`expire` command:** If the counter is 1 (meaning a new window just started), we set a Time-To-Live (TTL) on the key using `redis.expire()`. After 60 seconds, Redis will automatically delete the key, effectively resetting the window.
+3. **Fail Open:** In the `catch` block, if Redis crashes or network connectivity is lost, we log the error but call `next()`. This ensures our API remains available (failing open) rather than taking down the entire service just because the rate limiter failed.
+
+## The Race Condition Problem
+
+The basic implementation above has a subtle race condition.
+
+1. Thread A calls `incr(key)` and gets 1.
+2. Thread B calls `incr(key)` and gets 2.
+3. Thread A attempts to call `expire(key, 60)`.
+4. *What if Thread A crashes right here before executing `expire`?*
+
+If Thread A crashes before setting the expiration, the key will exist in Redis forever. Since Thread B saw the count as 2, it did not set an expiration either. The client is now permanently rate-limited because the key will never reset.
+
+## Advanced Implementation: Lua Scripts
+
+To solve this, we must ensure that the `INCR` and `EXPIRE` operations happen atomically—as a single, indivisible unit. Redis supports this through Lua scripts. When Redis executes a Lua script, it blocks all other operations until the script finishes.
+
+### The Lua Script Middleware
+
+```javascript
+const express = require('express');
+const Redis = require('ioredis');
+
+const app = express();
+const redis = new Redis();
+
+const WINDOW_SIZE_IN_SECONDS = 60;
+const MAX_REQUESTS = 10;
+
+// The Lua script
+const luaScript = `
+    local current = redis.call("INCR", KEYS[1])
+    if current == 1 then
+        redis.call("EXPIRE", KEYS[1], ARGV[1])
+    end
+    return current
+`;
+
+// Define a custom command in ioredis
+redis.defineCommand("rateLimit", {
+    numberOfKeys: 1,
+    lua: luaScript,
+});
+
+async function atomicRateLimiter(req, res, next) {
+    const clientIp = req.ip;
+    const redisKey = `rate_limit_atomic:${clientIp}`;
+
+    try {
+        // Execute the custom Lua script
+        const requestCount = await redis.rateLimit(
+            redisKey, // KEYS[1]
+            WINDOW_SIZE_IN_SECONDS // ARGV[1]
+        );
+
+        if (requestCount > MAX_REQUESTS) {
+            return res.status(429).json({
+                error: 'Too Many Requests',
+                message: 'Limit exceeded.'
+            });
+        }
+        
+        next();
+    } catch (error) {
+        console.error('Redis error:', error);
+        next();
+    }
+}
+
+app.get('/api/atomic-data', atomicRateLimiter, (req, res) => {
+    res.json({ message: 'Success with atomic rate limiting.' });
+});
+
+app.listen(3001, () => {
+    console.log('Server running on port 3001');
+});
+```
+
+### Explanation
+
+1. We write a small Lua script that performs the `INCR` and conditional `EXPIRE` logic.
+2. We use `redis.defineCommand` to register this script with our Redis client.
+3. When we call `redis.rateLimit()`, Redis executes the script atomically. Even if the Node.js server crashes immediately after sending the command, Redis guarantees that both the increment and the expiration setup will succeed together.
+
+This Lua script approach is how production-grade rate limiters ensure consistency in highly concurrent, distributed architectures.

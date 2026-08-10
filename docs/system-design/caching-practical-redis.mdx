@@ -1,0 +1,159 @@
+---
+title: Caching Practical Guide - Redis
+description: A practical guide on integrating Redis for distributed caching, managing TTL, and handling JSON data.
+---
+
+## Introduction
+
+While in-memory `Map` caching is great for learning, production applications require a distributed cache. If your app is scaled across 5 servers, an in-memory cache on Server A won't help a user whose request is routed to Server B.
+
+Redis is the de facto standard for distributed caching. In this guide, we will implement a robust Redis caching layer in Node.js, focusing on Time-To-Live (TTL) and serialization.
+
+## Prerequisites
+
+Start a local Redis instance using Docker:
+
+```bash
+docker run -d --name redis-cache -p 6379:6379 redis
+```
+
+Install the required packages:
+
+```bash
+npm install express ioredis
+```
+
+## Implementing the Redis Cache
+
+We will build an Express route that fetches user data. We will use the **Cache-Aside** strategy.
+
+### The Code
+
+```javascript
+// server.js
+const express = require('express');
+const Redis = require('ioredis');
+
+const app = express();
+const redis = new Redis(); // Connects to localhost:6379 by default
+
+// Simulated Database function
+async function queryDatabase(userId) {
+    console.log(`[DB] Executing slow SQL query for user ${userId}...`);
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            resolve({ 
+                id: userId, 
+                name: `User ${userId}`, 
+                createdAt: new Date().toISOString() 
+            });
+        }, 1500); // 1.5 seconds delay
+    });
+}
+
+app.get('/api/users/:id', async (req, res) => {
+    const userId = req.params.id;
+    const cacheKey = `user_profile:${userId}`;
+
+    try {
+        // 1. Check the Redis Cache
+        const cachedData = await redis.get(cacheKey);
+
+        if (cachedData) {
+            console.log(`[CACHE HIT] Found ${cacheKey}`);
+            // Redis stores strings. We must deserialize the JSON string back into an object.
+            return res.json(JSON.parse(cachedData));
+        }
+
+        console.log(`[CACHE MISS] Fetching ${cacheKey} from DB...`);
+        
+        // 2. Fetch from Database
+        const dbData = await queryDatabase(userId);
+
+        // 3. Save to Redis Cache with a TTL (Time-To-Live)
+        // We serialize the JavaScript object to a JSON string before storing.
+        // The 'EX' flag tells Redis to expire the key after the specified seconds.
+        const TTL_IN_SECONDS = 300; // 5 minutes
+        
+        await redis.set(
+            cacheKey, 
+            JSON.stringify(dbData), 
+            'EX', 
+            TTL_IN_SECONDS
+        );
+
+        // 4. Return the response
+        return res.json(dbData);
+
+    } catch (error) {
+        console.error('Error fetching user:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.listen(3000, () => {
+    console.log('Server running on port 3000');
+});
+```
+
+### Key Concepts Explained
+
+#### 1. Serialization and Deserialization
+
+Redis only stores strings (and byte arrays). It does not natively understand JavaScript objects. 
+- When writing to Redis, you must serialize the data using `JSON.stringify()`.
+- When reading from Redis, you must deserialize the data using `JSON.parse()`.
+
+Failure to stringify objects will result in Redis storing the literal string `"[object Object]"`, which is useless.
+
+#### 2. Time-To-Live (TTL)
+
+Cache invalidation is notoriously difficult. The easiest way to ensure your cache doesn't serve highly stale data indefinitely is to set a TTL.
+
+In the `redis.set()` command, we pass `'EX', 300`. This instructs Redis to automatically delete the key after 300 seconds (5 minutes). If a user requests the data after 5 minutes, it will result in a cache miss, forcing a fresh fetch from the database.
+
+## Handling Cache Failures Gracefully
+
+What happens if the Redis server goes offline? If your code is tightly coupled, your entire application might crash when it fails to connect to the cache.
+
+To build resilient systems, caching should be treated as an enhancement, not a strict dependency.
+
+Here is how you adjust the code to fail open:
+
+```javascript
+app.get('/api/users-resilient/:id', async (req, res) => {
+    const userId = req.params.id;
+    const cacheKey = `user_profile:${userId}`;
+    let dbData = null;
+
+    try {
+        // Attempt Cache Read
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+            return res.json(JSON.parse(cachedData));
+        }
+    } catch (cacheError) {
+        // Log the error but DO NOT crash or return a 500 error.
+        console.warn('Redis read failed, falling back to DB:', cacheError.message);
+    }
+
+    try {
+        // Fetch from Database
+        dbData = await queryDatabase(userId);
+    } catch (dbError) {
+        // If the DB fails, then we must return an error.
+        return res.status(500).json({ error: 'Database error' });
+    }
+
+    try {
+        // Attempt Cache Write
+        await redis.set(cacheKey, JSON.stringify(dbData), 'EX', 300);
+    } catch (cacheError) {
+        console.warn('Redis write failed:', cacheError.message);
+    }
+
+    return res.json(dbData);
+});
+```
+
+By wrapping the Redis read and write operations in independent `try...catch` blocks, we ensure that if Redis is unreachable, the application simply falls back to acting as if the cache is bypassed, retrieving data directly from the database and responding successfully to the user.

@@ -1,0 +1,183 @@
+---
+title: Rate Limiting Practical Guide - Local
+description: A practical guide from 0 to 100 on implementing local in-memory rate limiting in Node.js.
+---
+
+## Introduction
+
+In this practical guide, we will implement rate limiting algorithms from scratch using Node.js. We will start with a basic in-memory approach, suitable for a single-instance application or for understanding the core logic before moving to a distributed system.
+
+We will focus on implementing the **Fixed Window Counter** and the **Token Bucket** algorithms within an Express.js application.
+
+## Prerequisites
+
+Ensure you have Node.js installed. Create a new directory and initialize a basic Express application.
+
+```bash
+mkdir rate-limiting-demo
+cd rate-limiting-demo
+npm init -y
+npm install express
+```
+
+Create a file named `server.js` where we will write our code.
+
+## 1. Fixed Window Counter Implementation
+
+The fixed window algorithm is the simplest to implement. We define a time window (e.g., 1 minute) and a maximum number of allowed requests within that window.
+
+### Data Structure
+
+For an in-memory implementation, we can use a JavaScript `Map` to store the rate limiting data for each client (identified by IP address). The key will be the IP address, and the value will be an object containing the current count and the window start time.
+
+### The Middleware Code
+
+Here is the complete implementation of the fixed window counter as an Express middleware:
+
+```javascript
+const express = require('express');
+const app = express();
+
+// In-memory store for rate limiting data
+const rateLimitData = new Map();
+
+// Configuration
+const WINDOW_SIZE_IN_MS = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 5;
+
+function fixedWindowRateLimiter(req, res, next) {
+    const clientIp = req.ip;
+    const currentTime = Date.now();
+
+    // Check if the client is already in the store
+    if (!rateLimitData.has(clientIp)) {
+        rateLimitData.set(clientIp, {
+            count: 1,
+            windowStart: currentTime
+        });
+        return next();
+    }
+
+    const clientData = rateLimitData.get(clientIp);
+    const timeElapsed = currentTime - clientData.windowStart;
+
+    // Check if the current window has expired
+    if (timeElapsed > WINDOW_SIZE_IN_MS) {
+        // Reset the window and count
+        clientData.count = 1;
+        clientData.windowStart = currentTime;
+        return next();
+    }
+
+    // Client is within the current window, check the request count
+    if (clientData.count >= MAX_REQUESTS_PER_WINDOW) {
+        return res.status(429).json({
+            error: 'Too Many Requests',
+            message: 'You have exceeded the 5 requests in 1 minute limit.'
+        });
+    }
+
+    // Increment the count and allow the request
+    clientData.count++;
+    next();
+}
+
+// Apply the middleware to a specific route
+app.get('/api/data', fixedWindowRateLimiter, (req, res) => {
+    res.json({ message: 'Success! Here is your data.' });
+});
+
+app.listen(3000, () => {
+    console.log('Server is running on port 3000');
+});
+```
+
+### Explanation
+
+1. We use a `Map` named `rateLimitData` to store the state.
+2. When a request comes in, we retrieve the client's IP.
+3. If it's a new IP, we initialize their count to 1 and set the `windowStart` to the current time.
+4. If the IP exists, we calculate `timeElapsed`. If it's greater than `WINDOW_SIZE_IN_MS`, it means the previous window has passed. We reset the count to 1 and update `windowStart`.
+5. If the window has not passed, we check if `clientData.count` exceeds `MAX_REQUESTS_PER_WINDOW`. If it does, we return a `429 Too Many Requests` status.
+6. If the limit is not reached, we increment the count and call `next()` to proceed to the route handler.
+
+## 2. Token Bucket Implementation
+
+The token bucket algorithm provides a smoother flow of traffic. Tokens are added to a bucket at a constant rate, and each request consumes a token.
+
+### Data Structure
+
+Our `Map` will store the available tokens and the timestamp of the last time the bucket was refilled.
+
+### The Middleware Code
+
+```javascript
+const express = require('express');
+const app = express();
+
+const tokenBucketData = new Map();
+
+// Configuration
+const BUCKET_CAPACITY = 10;
+const REFILL_RATE = 1; // 1 token added per second
+const REFILL_INTERVAL_MS = 1000;
+
+function tokenBucketRateLimiter(req, res, next) {
+    const clientIp = req.ip;
+    const currentTime = Date.now();
+
+    if (!tokenBucketData.has(clientIp)) {
+        tokenBucketData.set(clientIp, {
+            tokens: BUCKET_CAPACITY - 1, // Consume one for this request
+            lastRefill: currentTime
+        });
+        return next();
+    }
+
+    const clientData = tokenBucketData.get(clientIp);
+    const timeElapsed = currentTime - clientData.lastRefill;
+
+    // Calculate how many tokens to add based on the time elapsed
+    const tokensToAdd = Math.floor(timeElapsed / REFILL_INTERVAL_MS) * REFILL_RATE;
+
+    if (tokensToAdd > 0) {
+        // Refill the bucket, ensuring it does not exceed capacity
+        clientData.tokens = Math.min(BUCKET_CAPACITY, clientData.tokens + tokensToAdd);
+        clientData.lastRefill = currentTime;
+    }
+
+    // Check if there are enough tokens to process the request
+    if (clientData.tokens > 0) {
+        clientData.tokens--;
+        return next();
+    }
+
+    res.status(429).json({
+        error: 'Too Many Requests',
+        message: 'Token bucket is empty. Please wait before making more requests.'
+    });
+}
+
+app.get('/api/bucket-data', tokenBucketRateLimiter, (req, res) => {
+    res.json({ message: 'Success! Token consumed.' });
+});
+
+app.listen(3001, () => {
+    console.log('Server is running on port 3001');
+});
+```
+
+### Explanation
+
+1. The configuration sets a capacity of 10 tokens, refilling at 1 token per second.
+2. For a new client, we give them a full bucket minus 1 token (for the current request) and set `lastRefill` to now.
+3. For existing clients, we calculate how many tokens they should receive based on the time elapsed since their last refill.
+4. We add `tokensToAdd` to their current tokens, ensuring it doesn't exceed `BUCKET_CAPACITY`. We also update `lastRefill`.
+5. If they have more than 0 tokens, we decrement the token count and allow the request.
+6. If they have 0 tokens, we return a 429 error.
+
+## Limitations of In-Memory Rate Limiting
+
+While these local implementations are great for learning and small projects, they fail in distributed environments. If you have multiple Node.js instances behind a load balancer, each instance will have its own independent `Map`. A client could send 5 requests to Instance A and 5 to Instance B, bypassing the limit.
+
+To solve this, we must move the state out of the application memory and into a centralized datastore like Redis, which we will cover in the next guide.

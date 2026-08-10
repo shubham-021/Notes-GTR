@@ -1,0 +1,176 @@
+---
+title: Caching Practical Guide - Strategies
+description: A practical guide on implementing Cache-Aside and Write-Through caching strategies in Node.js.
+---
+
+## Introduction
+
+Understanding caching strategies is crucial for improving application performance and reducing database load. In this practical guide, we will implement the two most common caching strategies: **Cache-Aside** (Lazy Loading) and **Write-Through**.
+
+To keep things simple and focused on the logic, we will use an in-memory `Map` as our cache and a mocked asynchronous function to represent our database.
+
+## Prerequisites
+
+Initialize a Node.js project. We will only use built-in features, so no external dependencies are strictly required for this specific demonstration.
+
+```bash
+mkdir caching-strategies-demo
+cd caching-strategies-demo
+npm init -y
+```
+
+## Mocking the Database
+
+First, let's create a simulated database. It will have an artificial delay to represent network and query time.
+
+```javascript
+// db.js
+const database = new Map([
+    [1, { id: 1, name: 'Alice', role: 'Admin' }],
+    [2, { id: 2, name: 'Bob', role: 'User' }]
+]);
+
+async function getFromDb(id) {
+    console.log(`[DB] Fetching user ${id} from database...`);
+    return new Promise((resolve) => {
+        setTimeout(() => resolve(database.get(id)), 1000); // 1 second delay
+    });
+}
+
+async function writeToDb(id, data) {
+    console.log(`[DB] Writing user ${id} to database...`);
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            database.set(id, data);
+            resolve();
+        }, 1000);
+    });
+}
+
+module.exports = { getFromDb, writeToDb };
+```
+
+## 1. The Cache-Aside Strategy
+
+Cache-Aside, or Lazy Loading, is the most widely used caching pattern. The application code is responsible for managing both the cache and the database. 
+
+When requesting data, the application first checks the cache. If it's a "cache miss," it queries the database, puts the result in the cache, and then returns it. Subsequent requests will result in a "cache hit."
+
+### Implementation
+
+```javascript
+// cache-aside.js
+const { getFromDb } = require('./db');
+
+const cache = new Map();
+
+async function getUser(id) {
+    const cacheKey = `user:${id}`;
+
+    // 1. Check the cache
+    if (cache.has(cacheKey)) {
+        console.log(`[CACHE HIT] Found user ${id} in cache.`);
+        return cache.get(cacheKey);
+    }
+
+    // 2. On cache miss, fetch from database
+    console.log(`[CACHE MISS] User ${id} not in cache.`);
+    const userData = await getFromDb(id);
+
+    if (userData) {
+        // 3. Write data to the cache for future requests
+        console.log(`[CACHE] Saving user ${id} to cache.`);
+        cache.set(cacheKey, userData);
+    }
+
+    // 4. Return the data
+    return userData;
+}
+
+// Testing the implementation
+async function run() {
+    console.time('First request');
+    await getUser(1); // Cache miss, takes 1s
+    console.timeEnd('First request');
+
+    console.time('Second request');
+    await getUser(1); // Cache hit, practically instant
+    console.timeEnd('Second request');
+}
+
+run();
+```
+
+### Analysis
+
+Run the code (`node cache-aside.js`). You will notice the first request takes about 1 second, while the second request is instantaneous.
+
+The main drawback of Cache-Aside is data staleness. If a separate process updates the database, the cache will still hold the old value until the cache entry expires (if we implemented a TTL) or is manually invalidated.
+
+## 2. The Write-Through Strategy
+
+In a Write-Through cache, the application writes data to the cache and the database simultaneously (or the cache writes to the database synchronously). 
+
+This ensures that the cache is always up-to-date with the database, eliminating stale data issues.
+
+### Implementation
+
+```javascript
+// write-through.js
+const { getFromDb, writeToDb } = require('./db');
+
+const cache = new Map();
+
+// Helper function to read from cache (Cache-Aside logic is often used for reading)
+async function getUser(id) {
+    const cacheKey = `user:${id}`;
+    if (cache.has(cacheKey)) {
+        console.log(`[CACHE HIT] Found user ${id}.`);
+        return cache.get(cacheKey);
+    }
+    const data = await getFromDb(id);
+    if (data) cache.set(cacheKey, data);
+    return data;
+}
+
+// The Write-Through implementation
+async function updateUser(id, newData) {
+    const cacheKey = `user:${id}`;
+    const fullData = { id, ...newData };
+
+    console.log(`[WRITE] Updating user ${id}...`);
+
+    // 1. Write to the database
+    await writeToDb(id, fullData);
+
+    // 2. Immediately write to the cache
+    cache.set(cacheKey, fullData);
+    console.log(`[CACHE] Cache updated for user ${id}.`);
+}
+
+// Testing the implementation
+async function run() {
+    // 1. Initial read
+    await getUser(1); 
+    
+    // 2. Update the user (Write-Through)
+    await updateUser(1, { name: 'Alice Updated', role: 'Super Admin' });
+
+    // 3. Subsequent read (Will hit the newly updated cache)
+    const updatedUser = await getUser(1);
+    console.log('Result:', updatedUser);
+}
+
+run();
+```
+
+### Analysis
+
+Run the code (`node write-through.js`). When `updateUser` is called, both the database and the cache are updated. When we subsequently call `getUser`, it returns the fresh data directly from the cache.
+
+The drawback of Write-Through is higher write latency. Every write operation must wait for both the database write and the cache write to complete before responding to the user. This is acceptable for read-heavy applications but can be a bottleneck for write-heavy systems.
+
+## Summary
+
+- Use **Cache-Aside** when you need maximum write performance and can tolerate slight data staleness or plan to use TTLs.
+- Use **Write-Through** when data consistency is critical, and you cannot afford to serve stale data, even at the cost of slower write operations.
