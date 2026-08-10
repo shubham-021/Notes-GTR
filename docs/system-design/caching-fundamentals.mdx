@@ -1,0 +1,55 @@
+---
+title: Caching Fundamentals
+description: Discover the core concepts of caching, why it is critical for performance, and the different layers where caching can be applied.
+---
+
+## What is Caching?
+
+Caching is the process of storing copies of files or data in a temporary storage location, known as a cache, so that they can be accessed more quickly. In system design, a cache is typically an in-memory data store (like RAM) that provides high-speed data access compared to a primary storage system (like a hard drive or a relational database).
+
+When a client requests data, the system first checks the cache. If the data is found, this is called a **Cache Hit**, and the data is returned immediately. If the data is not found, this is a **Cache Miss**. The system must then fetch the data from the primary storage, return it to the client, and usually, store a copy in the cache for future requests.
+
+### Why Do We Need Caching?
+
+1. Reduced Latency: Reading from RAM is orders of magnitude faster than reading from a disk or making a network call to another server. Caching drastically reduces the time it takes to serve a response to the user.
+2. Reduced Database Load: By serving frequent read requests from the cache, you prevent those requests from hitting your primary database. This frees up database resources to handle complex queries and write operations, preventing bottlenecks.
+3. Cost Efficiency: Scaling a database vertically (adding more CPU/RAM to a single machine) or horizontally (adding read replicas) can be very expensive. In-memory caches are relatively cheap and can handle millions of requests per second.
+4. Handling Spikes in Traffic: When a specific piece of data goes viral or experiences a sudden surge in popularity, a cache absorbs the impact, protecting the underlying systems from crashing under the load.
+
+## Where Does Caching Happen?
+
+Caching is not limited to a single layer of your application. It can and should be implemented at various stages of the request lifecycle to maximize performance.
+
+### 1. Client-Side Caching (Browser Cache)
+
+The fastest cache is the one that prevents a network request entirely. Modern web browsers have built-in caching mechanisms. When a browser downloads static assets (like CSS files, JavaScript bundles, or images), it can store them locally on the user's hard drive.
+
+You control browser caching by setting HTTP response headers on your server:
+- `Cache-Control`: The primary header used to specify caching directives (e.g., `Cache-Control: public, max-age=3600` tells the browser to cache the file for 1 hour).
+- `ETag` (Entity Tag): A unique identifier for a specific version of a resource. If the user requests the file again, the browser sends the ETag. If the server sees the file hasn't changed, it returns a 304 Not Modified response, saving bandwidth.
+
+### 2. CDN Caching (Content Delivery Network)
+
+A CDN is a geographically distributed network of proxy servers. Its primary goal is to serve content to users from a server that is physically close to them.
+
+When a user in Tokyo requests an image hosted on your server in New York, the request goes to the nearest CDN edge node in Tokyo. If the node doesn't have the image, it fetches it from New York, caches it in Tokyo, and serves it to the user. All subsequent users in Tokyo will receive the image instantly from the local CDN node.
+
+CDNs are perfect for static assets, but modern CDNs can also cache API responses (often called Edge Caching).
+
+### 3. API Gateway / Reverse Proxy Caching
+
+Before a request even hits your application code, it usually passes through a reverse proxy (like NGINX, HAProxy) or an API Gateway (like AWS API Gateway). 
+
+These layers can be configured to cache the responses of your backend services. If you have an endpoint that returns the daily weather forecast, the API Gateway can cache the response for an hour. During that hour, your backend servers will not receive a single request for that endpoint.
+
+### 4. Application-Level Caching
+
+This is caching implemented directly within your application code. When your application needs to compute a complex result or fetch heavily aggregated data, it checks a cache first.
+
+Application-level caching is typically implemented using distributed in-memory stores like Redis or Memcached. This allows all instances of your application servers to share the same cache pool. 
+
+If instance A computes a result and stores it in Redis, instance B can read that result immediately without re-computing it.
+
+### 5. Database Caching
+
+Most modern relational databases (like PostgreSQL and MySQL) have their own internal caching mechanisms (e.g., Buffer Pools). They keep frequently accessed blocks of data in memory so they don't have to read from the physical disk on every query. While you don't write application code to manage this directly, tuning these internal caches is a critical part of database administration.

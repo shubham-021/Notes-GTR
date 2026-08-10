@@ -1,0 +1,61 @@
+---
+title: Load Balancing Fundamentals
+description: Understand the basics of load balancing, why it is essential for scaling, and the differences between Layer 4 and Layer 7 routing.
+---
+
+## What is Load Balancing?
+
+Load balancing is the process of distributing incoming network traffic efficiently across a group of backend servers, known as a server farm or server pool. 
+
+Imagine a popular restaurant with only one waiter. As more customers arrive, the waiter gets overwhelmed, service slows down, and eventually, customers leave in frustration. A load balancer acts as a host at the front door, looking at the available waiters (servers) and directing new customers to the waiter who is currently the least busy.
+
+### Why is Load Balancing Important?
+
+1. High Availability and Reliability: If a single server goes down due to a hardware failure or a software bug, the load balancer immediately stops sending traffic to it and redirects it to the remaining healthy servers. This prevents a single point of failure.
+2. Scalability: As your user base grows, a single server cannot handle the load. Load balancers allow you to scale horizontally by adding more servers to the pool seamlessly without changing the application's external IP address.
+3. Performance: By spreading the work evenly, no single server becomes a bottleneck, ensuring that response times remain fast for all users.
+
+## How a Load Balancer Works
+
+A client typically never communicates directly with a backend server. Instead, the client sends a request to the Load Balancer's public IP address. The Load Balancer then executes the following steps:
+
+1. Request Reception: The load balancer receives the incoming traffic.
+2. Server Selection: It uses a specific algorithm (like Round Robin or Least Connections) to select a backend server from its pool.
+3. Traffic Forwarding: It forwards the client's request to the selected internal server.
+4. Response Forwarding: Once the backend server processes the request, it sends the response back to the load balancer, which then forwards it back to the original client.
+
+## Layer 4 vs Layer 7 Load Balancing
+
+Load balancers operate at different layers of the OSI (Open Systems Interconnection) model. The two most common are Layer 4 (Transport) and Layer 7 (Application). Understanding the difference is critical for system design.
+
+### Layer 4 Load Balancing (Transport Level)
+
+Layer 4 load balancers operate at the transport layer, primarily dealing with TCP and UDP protocols. 
+
+When a request arrives, a Layer 4 load balancer looks only at the source IP, destination IP, and the ports. It does not inspect the actual content of the message (the HTTP headers or the payload). It simply forwards the network packets to the backend server.
+
+- Pros: Extremely fast and uses very little CPU, as it does not need to decrypt SSL/TLS traffic or parse HTTP headers.
+- Cons: "Blind" routing. It cannot route traffic based on the content of the request. For example, it cannot send requests for `/images/*` to an image server and `/api/*` to an API server.
+
+### Layer 7 Load Balancing (Application Level)
+
+Layer 7 load balancers operate at the highest level, the application layer (HTTP, HTTPS, WebSocket).
+
+When a request arrives, a Layer 7 load balancer fully decrypts the traffic and parses the HTTP request. It can look at the requested URL path, the HTTP headers, cookies, and even the request body. Based on this information, it makes intelligent routing decisions.
+
+- Pros: Highly flexible. You can route traffic based on URL paths (path-based routing), hostnames, or specific HTTP headers (e.g., routing traffic with a specific user-agent to a beta server).
+- Cons: Slower and more CPU-intensive than Layer 4, as it must decrypt SSL traffic, read the headers, and potentially re-encrypt the traffic before sending it to the backend server (SSL Termination).
+
+## Hardware vs Software Load Balancers
+
+### Hardware Load Balancers
+
+Historically, load balancers were physical, proprietary hardware appliances installed in data centers (e.g., F5 BIG-IP). 
+- Pros: Capable of handling massive amounts of traffic at extremely high speeds due to specialized hardware (ASICs).
+- Cons: Very expensive, difficult to configure, and hard to scale quickly (you have to physically buy and rack another machine).
+
+### Software Load Balancers
+
+Today, most load balancers are software applications running on standard Linux servers or provided as managed cloud services. Examples include NGINX, HAProxy, and AWS Elastic Load Balancing (ELB).
+- Pros: Highly flexible, cost-effective, and can be scaled dynamically (spin up a new cloud instance instantly).
+- Cons: May not reach the absolute peak throughput of specialized hardware, but they are more than sufficient for 99.9% of modern web applications.

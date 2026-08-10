@@ -1,0 +1,90 @@
+---
+title: Rate Limiting Fundamentals
+description: Understand the basics of rate limiting, why it is necessary, and the core algorithms used to implement it.
+---
+
+## What is Rate Limiting?
+
+Rate limiting is a strategy used to control the rate of traffic sent or received by a network interface or application. In the context of web APIs and backend services, rate limiting restricts the number of requests a client can make within a specified time window.
+
+When a client exceeds the defined limit, the server rejects subsequent requests until the time window resets, typically responding with an HTTP 429 Too Many Requests status code.
+
+### Why is Rate Limiting Important?
+
+1. Preventing Denial of Service (DoS): It protects services from being overwhelmed by intentional attacks or unintentional spikes in traffic.
+2. Resource Management: It ensures fair usage of resources, preventing a single client from starving others of bandwidth, database connections, or CPU time.
+3. Cost Control: For services that rely on paid third-party APIs or serverless functions, rate limiting caps potential usage and prevents unexpectedly high bills.
+4. Enforcing Business Models: It allows businesses to offer tiered pricing plans (e.g., free tier allows 100 requests per day, premium tier allows 10,000 requests per day).
+
+## Identifying the Client
+
+To implement rate limiting, the server must first identify who is making the request. A rate limit is usually applied per client entity. There are several ways to identify clients:
+
+### 1. IP Address
+
+The most common approach for unauthenticated APIs is to track clients by their IP address. This is simple to implement but has drawbacks. Multiple users behind a single NAT (Network Address Translation) router or a corporate firewall will share the same IP address. If one user gets rate-limited, all other users behind that same IP will also be blocked.
+
+To capture the IP address in a backend application, you typically inspect the incoming HTTP request. However, if your application sits behind a load balancer or a reverse proxy (like NGINX or AWS ALB), the direct connection to your server comes from the proxy, not the actual user. 
+
+In this scenario, proxies use the `X-Forwarded-For` header to pass the original client's IP address. You must configure your server to trust this header and extract the first IP address listed, which represents the original client. 
+
+### 2. User Authentication (User ID)
+
+For authenticated endpoints, tracking by User ID is much more reliable than IP address. Once a user logs in and provides a token (like a JWT or a session cookie), the server extracts their unique user identifier and applies the rate limit to that ID. This ensures that users can switch devices or networks without affecting their rate limit, and multiple users on the same network are tracked independently.
+
+### 3. API Keys
+
+When providing a public API for developers to build upon, you typically issue API keys. Rate limits are tied to the specific API key used in the request header (e.g., `x-api-key`). This allows you to apply different limits based on the developer's subscription tier.
+
+## Core Rate Limiting Algorithms
+
+There are four primary algorithms used to implement rate limiting. Each has its own characteristics, advantages, and memory footprints.
+
+### 1. Token Bucket
+
+The Token Bucket algorithm is perhaps the most widely used and intuitive rate limiting algorithm.
+
+Imagine a bucket that holds a maximum number of tokens (the bucket capacity). Tokens are added to the bucket at a fixed, regular rate (the refill rate). When a request arrives, it must take one token from the bucket to be processed. If the bucket is empty, the request is dropped.
+
+This algorithm allows for bursts of traffic. If the bucket is full, a client can make a rapid burst of requests equal to the bucket's capacity. After the burst, they are limited to the refill rate.
+
+- Pros: Allows bursts of traffic; memory efficient (only needs to store the current token count and the last refill timestamp per client).
+- Cons: Can be tricky to tune both the bucket size and the refill rate to achieve the exact desired behavior.
+
+### 2. Leaky Bucket
+
+The Leaky Bucket algorithm uses a queue (the bucket) to process requests at a constant rate.
+
+When a request arrives, it is added to the queue. If the queue is full, the request is discarded. The server then processes requests from the queue at a steady, fixed rate, like water dripping continuously from a hole in a bucket.
+
+- Pros: Smooths out traffic bursts, ensuring a perfectly steady outflow of requests to the underlying service.
+- Cons: A burst of traffic can fill up the queue with older requests, causing new, potentially more important requests to be dropped.
+
+### 3. Fixed Window Counter
+
+This algorithm divides time into discrete, fixed-size windows (e.g., 10:00:00 to 10:01:00, 10:01:00 to 10:02:00) and maintains a counter for each window.
+
+When a request arrives, it checks the current time window. If the counter for that window is below the limit, the counter increments, and the request is allowed. If the counter reaches the limit, further requests are rejected until the next window starts.
+
+- Pros: Very simple to implement and memory efficient.
+- Cons: Suffers from the "boundary burst" problem. If a client sends all their allowed requests at the very end of one window, and another full batch at the very beginning of the next window, they effectively double their allowed rate during that short transition period.
+
+### 4. Sliding Window Log
+
+To solve the boundary burst problem of the Fixed Window, the Sliding Window Log algorithm keeps a timestamp log of every single request made by the client.
+
+When a new request arrives, the algorithm removes all timestamps from the log that are older than the time window (e.g., older than 1 minute). It then counts the remaining timestamps. If the count is below the limit, the new request's timestamp is added to the log, and it is allowed.
+
+- Pros: Highly accurate rate limiting with no boundary burst issues.
+- Cons: Consumes significant memory because it must store the exact timestamp of every request made within the window, for every active client.
+
+### 5. Sliding Window Counter
+
+This is a hybrid approach that combines the low memory usage of the Fixed Window with the smooth traffic handling of the Sliding Window Log.
+
+Instead of keeping individual timestamps, it tracks the counter from the previous fixed window and the counter from the current fixed window. When evaluating a request, it calculates a weighted count based on how far we are into the current window.
+
+For example, if the limit is 100 per minute, and we are 30 seconds (50%) into the current minute, the algorithm takes 50% of the previous minute's count and adds it to the current minute's count to estimate the sliding window usage.
+
+- Pros: Memory efficient and largely mitigates the boundary burst problem.
+- Cons: Slightly less strictly accurate than the Sliding Window Log, as it assumes traffic in the previous window was evenly distributed.

@@ -1,0 +1,51 @@
+---
+title: Caching Technologies
+description: Discover the standard technologies used for caching at various layers of a modern web application stack.
+---
+
+## Industry Standard Caching Technologies
+
+Caching is heavily layered in modern system design. No single technology solves all caching problems. Instead, engineering teams use specific tools for specific layers of the architecture.
+
+### 1. In-Memory Distributed Caches (Redis, Memcached)
+
+When engineers talk about "application-level caching," they are almost always referring to Redis or Memcached. These are NoSQL, in-memory key-value stores.
+
+**How to use them:**
+Your application code connects to these servers via a client library. When your application needs data (e.g., a user's profile), it first checks the cache using a key like `user:profile:123`. If the data exists, it parses the returned string (usually JSON) and uses it. If it doesn't exist, it queries the primary SQL database, formats the result into a string, and writes it back to the cache with a Time-To-Live (TTL) before returning it to the user.
+
+**Redis vs Memcached:**
+- **Memcached:** The older, simpler technology. It is a pure key-value store designed exclusively for caching strings. It is multi-threaded, making it extremely fast for simple GET and SET operations.
+- **Redis:** The current industry dominant choice. Redis is single-threaded but incredibly fast. Crucially, it supports complex data structures natively (Lists, Sets, Sorted Sets, Hashes), allows data persistence to disk, and has built-in replication. Because of its versatility, most new projects default to Redis.
+
+### 2. Content Delivery Networks (Cloudflare, AWS CloudFront)
+
+CDNs are the standard technology for edge caching—moving data physically closer to the end user.
+
+**How to use them:**
+You configure your domain name's DNS records to point to the CDN instead of your actual application servers. When a user navigates to your site, their request hits the nearest CDN edge node. The CDN inspects the HTTP `Cache-Control` headers sent by your origin server. If you configured an image to be cached for 30 days, the CDN stores it on their node. Subsequent users in that geographic region download the image directly from the CDN node, completely bypassing your infrastructure.
+
+**Functionality:**
+CDNs excel at serving static assets (HTML, CSS, JS, images, videos). Modern CDNs also offer "Edge Compute" (like Cloudflare Workers), allowing you to write small Javascript functions that run directly on the edge nodes to intercept and manipulate requests or perform custom caching logic before the request ever reaches your main servers.
+
+### 3. HTTP Reverse Proxy Caches (Varnish, NGINX)
+
+Before application-level caching, you can cache entire HTTP responses at the reverse proxy layer. 
+
+**How to use them:**
+A tool like Varnish Cache or NGINX is placed immediately in front of your application servers. You write configuration rules that tell the proxy which HTTP routes are safe to cache. 
+
+For example, you might configure Varnish to cache any GET request to `/api/v1/public-articles`. When the first user hits this endpoint, Varnish passes the request to your backend Node.js server, stores the entire HTTP response (headers and body), and serves it. For the next 5 minutes, if anyone else hits that endpoint, Varnish serves the exact same response directly from its memory without your Node.js server ever knowing a request happened.
+
+**Functionality:**
+They are incredibly efficient because they don't have to execute any application logic or serialize data. They simply replay HTTP responses. However, they are generally only useful for public, unauthenticated data. If you cache an endpoint containing private user data, you risk serving User A's private data to User B.
+
+### 4. Database-Level Caching (Buffer Pools)
+
+While you don't typically install a separate technology for this, it is an industry standard to tune the internal caches of your primary database.
+
+**How to use them:**
+In PostgreSQL, this is called the `shared_buffers`. In MySQL (InnoDB), it's the `innodb_buffer_pool_size`. As a database administrator, you allocate a significant portion of the database server's physical RAM (often 50% to 70%) to these memory pools. 
+
+**Functionality:**
+When a query is executed, the database loads the required disk pages into the buffer pool. If the same data is requested again, it is read instantly from RAM. Understanding and tuning these buffer pools is critical, as a database reading from a physical disk will always be the ultimate bottleneck in a system.

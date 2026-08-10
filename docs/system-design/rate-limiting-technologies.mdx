@@ -1,0 +1,49 @@
+---
+title: Rate Limiting Technologies
+description: Explore the industry-standard tools and technologies used to implement rate limiting in production environments.
+---
+
+## Industry Standard Tools for Rate Limiting
+
+In modern production environments, engineers rarely write rate limiters completely from scratch in the application layer unless there is a highly specific business requirement. Instead, the industry relies on battle-tested tools operating at different layers of the infrastructure.
+
+### 1. API Gateways (Kong, AWS API Gateway, Apigee)
+
+The most common and robust place to implement rate limiting is at the API Gateway level. An API Gateway sits in front of all your backend microservices and acts as the single point of entry for external traffic.
+
+**How to use them:**
+- **Kong:** Kong is an open-source API gateway built on top of NGINX. You enable its Rate Limiting plugin. You configure the plugin to track users based on their IP address, a specific header (like an API Key), or a JWT claim. Kong handles the complex sliding window or fixed window logic internally, usually backing the counters in a shared Redis cluster if you are running multiple Kong nodes.
+- **AWS API Gateway:** If you are in the AWS ecosystem, this is a managed service. You configure "Usage Plans" and associate them with API Keys. You define a quota (e.g., 1000 requests per month) and a rate (e.g., 20 requests per second with a burst of 50). AWS handles all the distributed tracking automatically without you needing to manage a database for counters.
+
+**Functionality:**
+They provide instant protection for your backend servers. Because they operate before the request reaches your application code, they save your servers from expending CPU cycles on rejected requests. They automatically return the standard HTTP 429 status codes and standard rate limiting headers.
+
+### 2. In-Memory Datastores (Redis)
+
+When you must implement rate limiting within your application code (for example, you need highly custom logic that depends on checking the user's billing status in a database), Redis is the undisputed industry standard.
+
+**How to use it:**
+You connect your application backend (Node.js, Go, Python, etc.) to a Redis cluster. When a request comes in, you execute a Redis command. 
+
+For a simple fixed-window counter, you use the `INCR` command on a key like `rate_limit:user_123:minute_45`. If the return value is 1 (meaning it's the first request in this window), you immediately use the `EXPIRE` command to set a TTL of 60 seconds so the key cleans itself up. If the return value exceeds your limit, you block the request.
+
+For more complex algorithms like Sliding Window Log, you use Redis "Sorted Sets" (`ZADD`, `ZREMRANGEBYSCORE`, `ZCARD`), using timestamps as the score to track exact request times and automatically cull old requests.
+
+**Functionality:**
+Redis is chosen for its extreme speed (sub-millisecond latency) and its single-threaded atomic operations, which completely prevent the race conditions that plague distributed rate limiting attempts.
+
+### 3. Web Application Firewalls (Cloudflare WAF)
+
+For protecting against malicious scrapers, DDoS attacks, or brute-force login attempts, rate limiting is often pushed even further out to the edge network using a WAF like Cloudflare.
+
+**How to use it:**
+You define rules in the Cloudflare dashboard. For example, "If any single IP address hits the `/login` endpoint more than 5 times in 1 minute, block them for 15 minutes." 
+
+**Functionality:**
+This is "Edge Rate Limiting." Cloudflare intercepts the traffic at their global data centers before the packets even reach your cloud provider (like AWS or GCP). It is designed for security and broad traffic shaping rather than granular, per-user API monetization limits.
+
+## Choosing the Right Tool
+
+- Use an API Gateway if you have a microservices architecture and want a centralized place to enforce standard limits on all routes without writing application code.
+- Use Redis if you need highly customized rate limiting logic that requires deep integration with your application's business logic and database state.
+- Use a WAF (like Cloudflare) to protect your infrastructure from malicious volumetric attacks at the edge of the network.

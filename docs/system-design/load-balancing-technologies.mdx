@@ -1,0 +1,49 @@
+---
+title: Load Balancing Technologies
+description: An overview of the most popular software and managed load balancing solutions used in the industry today.
+---
+
+## Industry Standard Load Balancing Technologies
+
+While hardware load balancers (like F5 Networks or Citrix ADC) are still used in massive enterprise data centers, the vast majority of modern web architecture relies on software-based load balancers and managed cloud services.
+
+### 1. Reverse Proxies / Software Load Balancers (NGINX, HAProxy)
+
+These are open-source software applications that you install and manage on standard Linux servers. They are the backbone of most self-hosted or bare-metal Kubernetes architectures.
+
+**How to use them:**
+You provision a dedicated server (or a cluster of them for high availability) and install NGINX or HAProxy. You then write configuration files that define your "upstream" backend servers (your application instances) and define the rules for how incoming traffic on port 80/443 should be distributed among them.
+
+**NGINX:**
+NGINX is primarily known as an incredibly fast web server, but it is heavily used as a Layer 7 reverse proxy and load balancer. It excels at serving static content, terminating SSL/TLS connections, and routing HTTP traffic. It is configured via declarative text files.
+
+**HAProxy (High Availability Proxy):**
+HAProxy is a dedicated, specialized load balancer. While NGINX can act as a web server, HAProxy is strictly for proxying and load balancing. It is widely considered the gold standard for high-performance Layer 4 (TCP) load balancing, though it is also excellent at Layer 7. It provides incredibly detailed metrics and health-checking capabilities out of the box.
+
+### 2. Managed Cloud Load Balancers (AWS ELB/ALB)
+
+If your infrastructure is hosted on a major cloud provider (AWS, GCP, Azure), you will almost certainly use their managed load balancing services instead of maintaining your own NGINX or HAProxy instances. 
+
+**How to use them:**
+In AWS, you do not manage the underlying virtual machines. You simply navigate to the AWS console (or use Infrastructure as Code like Terraform), create a Load Balancer, point it to an "Target Group" (a collection of your EC2 instances or ECS containers), and configure the routing rules. AWS automatically scales the underlying load balancer infrastructure to handle traffic spikes.
+
+**Types of Managed Balancers (AWS specific examples):**
+- **Application Load Balancer (ALB):** This is a Layer 7 load balancer. It is designed for HTTP/HTTPS traffic. You use an ALB when you need advanced routing based on URL paths (e.g., sending `/api` to one cluster and `/blog` to a WordPress instance) or when you want to authenticate users via OIDC directly at the load balancer level.
+- **Network Load Balancer (NLB):** This is a Layer 4 load balancer. It operates at the connection level (TCP/UDP). You use an NLB when you need ultra-high performance, extremely low latency, or if you need to load balance non-HTTP traffic (like a custom multiplayer game server protocol or a database connection).
+- **Gateway Load Balancer (GWLB):** Used specifically for deploying, scaling, and managing third-party virtual appliances, such as firewalls or intrusion detection systems.
+
+### 3. Service Mesh and Internal Load Balancing (Envoy)
+
+As architectures moved from monoliths to hundreds of microservices, traditional load balancers became insufficient for managing internal service-to-service communication.
+
+**How to use them:**
+Instead of a central load balancer, a "Sidecar Proxy" (like Envoy) is deployed alongside every single application container. When Service A wants to talk to Service B, it doesn't send a request to a central load balancer. It sends the request to its local Envoy sidecar. The sidecar already knows the IP addresses of all healthy Service B instances and intelligently load balances the request directly to one of them.
+
+**Envoy Proxy:**
+Originally developed at Lyft, Envoy is an open-source edge and service proxy designed for cloud-native applications. It is the underlying technology powering popular Service Meshes like Istio. Envoy is configured dynamically via APIs (unlike NGINX's static text files), making it perfect for highly dynamic Kubernetes environments where backend server IP addresses change constantly.
+
+## Choosing the Right Tool
+
+- Use **NGINX or HAProxy** if you are managing your own bare-metal servers or want absolute control over the proxy configuration without vendor lock-in.
+- Use **AWS ALB/NLB (or GCP/Azure equivalents)** if you are building in the cloud and want to offload the maintenance, scaling, and high-availability configuration to the provider.
+- Use **Envoy (via a Service Mesh)** when you have a complex microservices architecture in Kubernetes and need advanced internal load balancing, observability, and mutual TLS between internal services.

@@ -190,4 +190,18 @@ export const navigation: NavSection[] = [
             { title: "MCP, A2A & Guardrails", slug: "genai-python/mcp-a2a-guardrails" },
         ],
     },
+    {
+        title: "System Design",
+        items: [
+            { title: "Rate Limiting Fundamentals", slug: "system-design/rate-limiting-fundamentals" },
+            { title: "Rate Limiting Implementation", slug: "system-design/rate-limiting-implementation" },
+            { title: "Rate Limiting Technologies", slug: "system-design/rate-limiting-technologies" },
+            { title: "Caching Fundamentals", slug: "system-design/caching-fundamentals" },
+            { title: "Caching Strategies", slug: "system-design/caching-strategies" },
+            { title: "Caching Technologies", slug: "system-design/caching-technologies" },
+            { title: "Load Balancing Fundamentals", slug: "system-design/load-balancing-fundamentals" },
+            { title: "Load Balancing Algorithms", slug: "system-design/load-balancing-algorithms" },
+            { title: "Load Balancing Technologies", slug: "system-design/load-balancing-technologies" },
+        ],
+    },
 ];

@@ -1,0 +1,73 @@
+---
+title: Load Balancing Algorithms
+description: Deep dive into the algorithms used to distribute traffic, including health checks and session persistence strategies.
+---
+
+## Static Load Balancing Algorithms
+
+Static algorithms distribute traffic based on predefined rules. They do not take the current state or load of the backend servers into account. 
+
+### 1. Round Robin
+
+This is the simplest and most widely used static algorithm. The load balancer goes down the list of servers sequentially. 
+
+Request 1 goes to Server A, Request 2 goes to Server B, Request 3 goes to Server C, and Request 4 loops back to Server A. 
+
+- Pros: Incredibly simple to implement and requires zero state tracking.
+- Cons: Assumes all servers are identical in capacity and all requests require the same amount of processing power. If Server A receives three heavy database queries while Server B receives three lightweight ping requests, Server A will become overloaded.
+
+### 2. Weighted Round Robin
+
+A slight modification to standard Round Robin. Administrators assign a "weight" to each server based on its compute capacity. 
+
+If Server A is a powerful machine (Weight: 3) and Server B is a smaller instance (Weight: 1), the load balancer will send three requests to Server A for every one request it sends to Server B (A, A, A, B, A, A, A, B).
+
+- Pros: Better handles fleets with heterogeneous server hardware.
+- Cons: Still blind to the actual real-time load on the servers.
+
+### 3. IP Hash
+
+In this algorithm, the load balancer takes the client's IP address, runs a mathematical hash function on it, and uses the result to determine which server receives the request.
+
+Because the hash of a specific IP address is always the same, a specific user will always be routed to the exact same backend server, as long as the server pool remains constant.
+
+- Pros: Useful when a client needs to maintain a continuous session with a specific server (e.g., holding local state or a WebSocket connection).
+- Cons: If the user changes networks (e.g., switches from Wi-Fi to cellular data), their IP changes, and they are routed to a different server.
+
+## Dynamic Load Balancing Algorithms
+
+Dynamic algorithms make intelligent routing decisions based on the real-time health and current workload of the backend servers.
+
+### 1. Least Connections
+
+The load balancer keeps track of the number of active, open connections each server currently has. When a new request arrives, it is routed to the server with the fewest active connections.
+
+- Pros: Excellent for long-lived connections like WebSockets or large file downloads, where some requests take much longer than others.
+- Cons: Requires the load balancer to expend CPU and memory continuously tracking connection states.
+
+### 2. Least Response Time
+
+The load balancer tracks how quickly each server is responding to requests. It calculates a moving average of the response time (often combined with the number of active connections). When a new request arrives, it is routed to the server that is currently responding the fastest.
+
+- Pros: Highly responsive to sudden spikes in load or temporary performance degradation on specific servers. 
+- Cons: The most complex algorithm to compute, requiring constant monitoring and state updates.
+
+## Critical Concepts in Load Balancing
+
+### Health Checks
+
+A load balancer is only useful if it knows which servers are actually alive. Load balancers perform continuous "Health Checks" (often called pinging) against the backend servers.
+
+Typically, the load balancer sends an HTTP request to a specific endpoint (e.g., `/health`) on the backend server every few seconds. If the server responds with a 200 OK, it is considered healthy. If the server times out or returns a 500 error consecutively, the load balancer marks the server as "unhealthy" and stops sending traffic to it.
+
+Once the server begins passing the health checks again, it is automatically reintroduced into the rotation.
+
+### Sticky Sessions (Session Persistence)
+
+Sometimes, application state (like a shopping cart or a user login session) is stored entirely in the local memory of a specific backend server, rather than in a shared database or Redis cache. 
+
+In this scenario, if a user's first request goes to Server A, their subsequent requests *must* go to Server A. If they hit Server B, Server B won't know they are logged in.
+
+Sticky Sessions solve this. When the load balancer routes the first request, it injects a special cookie into the response sent to the client. The cookie contains the ID of the server that handled the request. When the client makes their next request, they send the cookie back. The Layer 7 load balancer reads the cookie and ensures the request is routed back to the exact same server, bypassing the normal load balancing algorithm.
+
+Note: Relying heavily on sticky sessions is generally considered an anti-pattern in modern system design, as it makes scaling down difficult (you can't remove a server safely if active users are "stuck" to it). Storing state in a centralized database or cache is preferred.

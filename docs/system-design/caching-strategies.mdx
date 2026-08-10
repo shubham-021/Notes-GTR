@@ -1,0 +1,89 @@
+---
+title: Caching Strategies & Eviction
+description: Explore the different patterns for reading and writing to a cache, how data is evicted when memory is full, and common caching pitfalls.
+---
+
+## Cache Reading and Writing Patterns
+
+When implementing application-level caching, you must decide how your application code interacts with the cache and the primary database. There are several established patterns, each suited for different use cases.
+
+### 1. Cache Aside (Lazy Loading)
+
+This is the most common caching pattern. In Cache Aside, the application code is responsible for managing both the cache and the database. The cache does not interact directly with the database.
+
+How it works (Read):
+1. The application checks the cache for the requested data.
+2. If found (Cache Hit), the data is returned.
+3. If not found (Cache Miss), the application reads the data from the database.
+4. The application then writes the fetched data into the cache so it's ready for the next request.
+5. Finally, the data is returned to the client.
+
+How it works (Write):
+1. The application writes new data directly to the database.
+2. The application then either updates the corresponding cache entry or simply deletes (invalidates) it, forcing a Cache Miss on the next read.
+
+- Pros: Resilient to cache failures. If the cache goes down, the application can still fall back to the database.
+- Cons: The first request for a piece of data will always be slow (Cache Miss), and the application code becomes more complex as it orchestrates both stores.
+
+### 2. Read-Through
+
+In a Read-Through cache, the application code treats the cache as the primary data store. The application never talks to the database directly for reads.
+
+How it works:
+1. The application requests data from the cache.
+2. If the data is missing, the cache itself (or a library wrapping it) transparently fetches the data from the database.
+3. The cache updates its own records and returns the data to the application.
+
+- Pros: Simplifies application code since the cache handles database fetching.
+- Cons: Requires the cache layer or library to be aware of the database schema and connection details.
+
+### 3. Write-Through
+
+Similar to Read-Through, the application only interacts with the cache.
+
+How it works:
+1. The application writes data to the cache.
+2. The cache synchronously writes the data to the primary database.
+3. Only when the database write is successful does the cache return success to the application.
+
+- Pros: Data in the cache is guaranteed to be completely consistent with the database.
+- Cons: Every write operation involves two network hops (app to cache, cache to DB), increasing write latency.
+
+### 4. Write-Behind (Write-Back)
+
+In this pattern, the application writes data to the cache, and the cache immediately returns a success response. The cache then asynchronously writes the data to the database in the background, often in batches.
+
+- Pros: Extremely fast write performance, as the application doesn't wait for the slow database disk write.
+- Cons: High risk of data loss. If the cache server crashes before it syncs with the database, the written data is permanently lost. This is best suited for non-critical data like view counters or analytics.
+
+## Cache Eviction Policies
+
+Caches have limited memory capacity. When the cache is full and new data needs to be stored, the system must decide which old data to remove. This is determined by the eviction policy.
+
+### 1. TTL (Time To Live)
+
+TTL is not strictly an eviction policy for when memory is full, but it is the most crucial tool for cache management. Every item placed in the cache is given an expiration time (e.g., 3600 seconds). Once that time elapses, the cache automatically deletes the item, ensuring data doesn't become overly stale.
+
+### 2. LRU (Least Recently Used)
+
+LRU is the most common algorithm for full caches. It tracks when items are accessed. When space is needed, it evicts the item that has not been read or written to for the longest period of time. It assumes that data accessed recently will likely be accessed again soon.
+
+### 3. LFU (Least Frequently Used)
+
+LFU tracks how many times an item has been accessed over its lifetime. When space is needed, it evicts the items with the lowest access counts. It assumes that data requested often in the past will be requested often in the future.
+
+### 4. FIFO (First In, First Out)
+
+A simple queue-based approach. The first item that was added to the cache is the first one to be evicted, regardless of how often or how recently it was accessed.
+
+## Common Pitfalls
+
+### The Thundering Herd Problem (Cache Stampede)
+
+A cache stampede occurs when a highly popular piece of data, which is currently being heavily requested, suddenly expires from the cache (its TTL runs out). 
+
+Because the data is no longer in the cache, hundreds or thousands of concurrent requests all experience a Cache Miss simultaneously. All of those requests immediately query the database for the same exact data, causing a massive spike in database load that can bring the entire system down.
+
+Solutions:
+- Lock/Mutex: When a Cache Miss occurs, the first request acquires a lock. Subsequent requests for the same key see the lock and wait (sleep for a few milliseconds) rather than hitting the database. Once the first request populates the cache, it releases the lock, and the waiting requests read from the newly populated cache.
+- Probabilistic Early Expiration: A background process artificially recomputes and updates the cache slightly before the actual TTL expires, ensuring the cache is always warm for hot data.
