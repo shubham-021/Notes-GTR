@@ -1,0 +1,89 @@
+---
+title: Strings
+description: String types, byte string literals, and raw strings
+---
+
+## &str vs String
+
+Rust has two main string types, and they are not the same.
+
+```rust
+let s = "hi";                    // type: &str
+let str = String::from("hi");   // type: String
+```
+
+`&str` is a string slice. The variable `s` is a pointer to `"hi"` which lives in read-only memory. It can't do things that `String` can do (like grow or be modified).
+
+`String` is an owned, heap-allocated, growable string. You create one with `String::from(...)`.
+
+A string literal like `"hi"` has type `&str`. A string slice from a `String` also has type `&str`. Both are `&str`, with one subtle distinction in where their data comes from:
+
+```rust
+let s = "hello";
+let lit_sl: &str = &s[..4];      // slice of a string literal
+
+let s = String::from("hello");
+let str_sl: &str = &s[..4];      // slice of a String
+```
+
+## Byte String Literals
+
+Byte string literals let you create a `&[u8]` value directly:
+
+```rust
+println!("{:?}", b"abc");
+println!("{:?}", &[97, 98, 99]);
+```
+
+Both print `[97, 98, 99]`. The `b` prefix tells Rust to treat each character as its ASCII byte value.
+
+## Raw Strings
+
+Raw strings let you create a `&str` value with escape processing disabled.
+
+Normally, `\` has a special meaning inside a string. For example, `"\n"` means an actual newline character. But `r"\n"` means the literal characters `\` and `n`.
+
+```rust
+println!("{:?}", "\n");   // prints a newline
+println!("{:?}", r"\n");  // prints: "\\n"
+```
+
+The important idea: `r"..."` disables normal escape processing.
+
+### Why are raw strings useful?
+
+Consider HTML:
+
+```rust
+println!("<a href=\"link.html\">link</a>");
+```
+
+You have to escape the quotes with `\"`. With a raw string:
+
+```rust
+println!(r#"<a href="link.html">link</a>"#);
+```
+
+You don't need to escape them. The output is: `<a href="link.html">link</a>`.
+
+### Why r# instead of just r?
+
+You can write `r"hello"` for simple raw strings. But what if your string itself contains a `"`?
+
+```rust
+r"<a href="link.html">"
+```
+
+Rust would think the string ends at the second `"`. So you add `#`:
+
+```rust
+r#"<a href="link.html">"#
+```
+
+Now Rust knows the string ends at a `"` followed by `#`. You can use multiple `#` if necessary:
+
+```rust
+r##"some "text" here"##
+```
+
+The number of `#` on the opening and closing sides must match.

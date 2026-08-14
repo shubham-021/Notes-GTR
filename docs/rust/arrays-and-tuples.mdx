@@ -1,0 +1,132 @@
+---
+title: Arrays and Tuples
+description: Fixed-size arrays, bounds checking, tuples, destructuring, and nested arrays
+---
+
+## Arrays
+
+```rust
+let mut a: [i8; 5] = [5, 4, 3, 2, 1];
+println!("a: {a:?}");
+```
+
+The type `[i8; 5]` means: an array of `i8` values with exactly 5 elements. The `:?` inside the format string tells Rust to format the value using its Debug representation, which is how you print arrays and other compound types.
+
+You can initialize an array with repeated values:
+
+```rust
+let b = [10; 5];       // [10, 10, 10, 10, 10]
+let c = [true; 6];     // [true, true, true, true, true, true]
+let d = ['x'; 5];      // ['x', 'x', 'x', 'x', 'x']
+```
+
+## Bounds Checking
+
+In C, doing:
+
+```c
+int a[5];
+a[6] = 0;
+```
+
+can access memory outside the array. That's undefined behavior and can potentially corrupt other memory.
+
+Rust instead guarantees: if you try to access an out-of-bounds index, the program panics rather than silently accessing arbitrary memory.
+
+```
+a[6]  →  bounds check  →  invalid?  →  panic
+```
+
+## Stack vs Heap
+
+Fixed-size arrays `[T; N]` are stored inline, so a local one is typically on the stack. Dynamic arrays (`Vec<T>`) store their elements on the heap.
+
+## Tuples
+
+A tuple in Rust is a collection of values of different types, grouped together into one value.
+
+```rust
+let t: (i8, bool) = (7, true);
+dbg!(t.0); // 7
+dbg!(t.1); // true
+
+let s = ("Arka", 7, true);       // types: &str, i32, bool
+let y = (String::from("Arka"), 7, true); // types: String, i32, bool
+```
+
+Access elements with `.0`, `.1`, `.2`, etc.
+
+## Unpacking Tuples
+
+```rust
+let s = ("Arka", 7, true);
+let (name, roll_no, pass) = s;
+```
+
+Tuples are useful for returning multiple values from a function:
+
+```rust
+fn calculate() -> (i32, i32) {
+    (10, 20)
+}
+
+let (x, y) = calculate();
+```
+
+Unlike arrays, tuples cannot be used in a `for` loop. This is because a `for` loop requires all the elements to have the same type, which may not be the case for a tuple.
+
+## Destructuring Patterns
+
+You can selectively ignore elements when destructuring:
+
+```rust
+fn access_tuple_data(tuple: (char, i32, bool)) {
+    let (a, b, c) = tuple;       // bind all three
+    let (_, b, c) = tuple;       // ignore the first element
+    let (.., c) = tuple;         // ignore everything but the last
+    let (first, .., last) = tuple; // ignore everything but first and last
+}
+```
+
+All these patterns work with arrays as well:
+
+```rust
+let [first, .., last] = [2, 3, 6, 7];
+```
+
+## Array Iteration
+
+```rust
+let primes = [2, 3, 5, 7, 11, 13, 17, 19];
+for prime in primes {
+    for i in 2..prime {
+        assert_ne!(prime % i, 0);
+    }
+}
+```
+
+For every prime, this checks that dividing it by every number from 2 up to `prime - 1` never gives remainder 0.
+
+## Nested Arrays
+
+```rust
+let array = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]; // type: [[i32; 3]; 3]
+```
+
+## Transpose Exercise
+
+```rust
+let mut array = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+println!("Array before transpose: {array:?}");
+
+let (rows, cols) = (array.len(), array[0].len());
+for i in 0..rows {
+    for j in (i + 1)..cols {
+        let corres_val = array[j][i];
+        array[j][i] = array[i][j];
+        array[i][j] = corres_val;
+    }
+}
+
+println!("Array after transpose: {array:?}");
+```

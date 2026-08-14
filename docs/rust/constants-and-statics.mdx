@@ -1,0 +1,81 @@
+---
+title: Constants and Statics
+description: Compile-time constants, const fn, and static variables with program lifetime
+---
+
+## Constants
+
+Constants are evaluated at compile time and their values are inlined wherever they are used.
+
+```rust
+const DIGEST_SIZE: usize = 3;
+const FILL_VALUE: u8 = calculate_fill_value();
+
+const fn calculate_fill_value() -> u8 {
+    if DIGEST_SIZE < 10 { 42 } else { 13 }
+}
+
+fn compute_digest(text: &str) -> [u8; DIGEST_SIZE] {
+    let mut digest = [FILL_VALUE; DIGEST_SIZE];
+    for (idx, &b) in text.as_bytes().iter().enumerate() {
+        digest[idx % DIGEST_SIZE] = digest[idx % DIGEST_SIZE].wrapping_add(b);
+    }
+    digest
+}
+
+let digest = compute_digest("Hello");
+println!("digest: {digest:?}");
+```
+
+Because `FILL_VALUE` is a `const`, Rust must calculate its value at compile time. You can only call `const fn` functions in a const expression. If `calculate_fill_value` was an ordinary `fn`, the compiler would reject the call.
+
+## Static Variables
+
+A `static` variable lives for the entire execution of the program and will not move.
+
+```rust
+static BANNER: &str = "Welcome to Rust";
+println!("{BANNER}");
+```
+
+A static variable exists for the entire lifetime of the program, but its scope depends on where it is declared.
+
+```rust
+fn foo() {
+    static X: i32 = 10;
+}
+```
+
+Here `X` lives for the entire program, but its name can only be accessed inside `foo`. You cannot use `X` from `main`. If you declare it at module/global scope:
+
+```rust
+static X: i32 = 10;
+
+fn foo() {
+    println!("{X}");
+}
+
+fn main() {
+    println!("{X}");
+}
+```
+
+Both `foo` and `main` can access it.
+
+So remember: `static` controls how long the value lives, while its declaration location controls where its name can be accessed.
+
+## Declaration Order
+
+A static variable is stored as static program data and exists for the entire lifetime of the program, so its declaration order doesn't determine when it becomes available.
+
+```rust
+fn main() {
+    println!("{X}");
+}
+
+static X: i32 = 42;
+```
+
+This works because `X` is a module-level static known during compilation. It doesn't wait for execution to reach its declaration.
+
+However, scope still matters: a module-level static can be accessed throughout its visible module, while a static inside a function can only be accessed by name inside that function, even though it lives for the entire program.

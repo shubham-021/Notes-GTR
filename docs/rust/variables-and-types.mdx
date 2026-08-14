@@ -1,0 +1,95 @@
+---
+title: Variables and Types
+description: Immutability by default, built-in types, numeric literals, and constraint-based type inference
+---
+
+## Immutable by Default
+
+Variables in Rust are immutable by default.
+
+```rust
+fn main() {
+    let x: i32 = 10;
+    println!("x: {x}");
+
+    x = 20; // error: cannot assign twice to immutable variable
+}
+```
+
+Use `mut` to make a variable mutable:
+
+```rust
+let mut x = 10;
+x = 20; // this works
+```
+
+## Built-in Types
+
+Rust's default integer type is `i32`. The default floating point literal type is `f64`.
+
+**Signed integers:** `i8`, `i16`, `i32`, `i64`, `i128`, `isize`
+
+**Unsigned integers:** `u8`, `u16`, `u32`, `u64`, `u128`, `usize`
+
+**Floating point:** `f32`, `f64`
+
+**Other:** `char`, `bool`
+
+The bit widths follow a pattern: `iN`, `uN`, `fN` are N bits wide. `isize` and `usize` are the width of a pointer on the target platform. `char` is 32 bits wide. `bool` is 8 bits wide.
+
+## Numeric Literals
+
+Rust allows `_` inside numeric literals purely for readability:
+
+```rust
+let million = 1_000_000;
+let ten_thousand = 10_000;
+```
+
+You can also attach a type suffix directly to a literal:
+
+```rust
+let x = 123_i64;
+let y = 123i64;
+```
+
+Both mean the same thing: the number 123 with type `i64`. This is Rust's way of saying "treat this literal as an `i64`."
+
+## Type Inference
+
+Rust doesn't necessarily determine the type at the initialization line. It collects constraints from the surrounding code and then figures out the type.
+
+```rust
+fn takes_u32(x: u32) {
+    println!("u32: {x}");
+}
+
+fn takes_i8(y: i8) {
+    println!("i8: {y}");
+}
+
+fn main() {
+    let x = 10;
+    let y = 20;
+    takes_u32(x);
+    takes_i8(y);
+}
+```
+
+Here, `x` is inferred as `u32` because it flows into `takes_u32`. If you removed that call, `x` would default to `i32`. Similarly, `y` is inferred as `i8` because it flows into `takes_i8`.
+
+If you wrote both `takes_i8(y)` and `takes_u32(y)`, it depends entirely on which comes first. The first usage sets the constraint, and the second would be a type mismatch error.
+
+The key idea: Rust doesn't just look at the `let` line. It looks at how the variable is used throughout the function and resolves the type from those constraints.
+
+## Comparing Types
+
+You cannot compare values of different types:
+
+```rust
+let x = 3.14;
+let y = 20;
+assert_eq!(x, y); // error: expected f64, found i32
+```
+
+`assert_eq!` checks that two values are equal and panics if they are not. But it also requires both values to be the same type.

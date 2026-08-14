@@ -1,46 +1,52 @@
 ---
 title: Getting Started
-description: Setting up Rust, creating projects with Cargo, and your first program
+description: Compiler attributes, suppressing warnings, and your first Rust program
 ---
 
-## Installation
+## Suppressing Warnings
 
-Install Rust using rustup:
+Rust is strict about unused code. If you declare a variable, import, or function and never use it, the compiler will warn you.
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+To suppress all unused-related warnings for an entire file or crate:
+
+```rust
+#![allow(unused)]
 ```
 
-## Creating a Project
+To suppress warnings for a specific function or variable:
 
-```bash
-# Create a new project
-cargo new project_name
-cd project_name
+```rust
+#[allow(dead_code)]
+fn unused_function() {}
 
-# Build and run
-cargo build           # Compile the project
-cargo run             # Build and run
-cargo check           # Check for errors without building
-cargo build --release # Build with optimizations
+#[allow(unused_variables)]
+fn example() {
+    let x = 10;
+}
 ```
 
-## Project Structure
+The difference between `#[...]` and `#![...]` is about scope:
 
+- `#[...]` applies to the thing immediately after it
+- `#![...]` applies to the enclosing item (the entire file or crate)
+
+So `#![allow(unused)]` at the top of a file means "allow unused code for the entire crate/file," whereas `#[allow(dead_code)]` placed above a function means "allow this specific function to be unused."
+
+Rust's preferred way when you intentionally don't use a variable is to prefix it with `_`:
+
+```rust
+let _x = 10;
+let _unused_value = 20;
 ```
-project_name/
-├── Cargo.toml    # Project manifest (dependencies, metadata)
-├── Cargo.lock    # Exact dependency versions
-└── src/
-    └── main.rs   # Entry point
-```
+
+The compiler treats `_`-prefixed variables as intentionally unused and stays quiet about them.
 
 ## Hello World
 
 ```rust
 fn main() {
-    println!("Hello, World!");
+    println!("Hello, world!");
 }
 ```
 
-The `println!` macro prints text to the console. Note the `!` - this indicates it's a macro, not a regular function.
+`println!` is a macro (indicated by the `!`), not a regular function. It prints text to the console with a newline.

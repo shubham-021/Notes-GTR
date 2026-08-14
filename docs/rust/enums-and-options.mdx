@@ -1,0 +1,160 @@
+---
+title: Enums and Options
+description: Enum variants, type aliases, Option, and Result
+---
+
+## Enums
+
+The `enum` keyword allows the creation of a type which has a few different variants.
+
+```rust
+#[derive(Debug)]
+enum Direction {
+    Left,
+    Right,
+}
+
+#[derive(Debug)]
+enum PlayerMove {
+    Pass,                        // Simple variant
+    Run(Direction),              // Tuple variant
+    Teleport { x: u32, y: u32 }, // Struct variant
+}
+
+let dir = Direction::Left;
+let player_move = PlayerMove::Run(dir);
+println!("On this turn: {player_move:?}");
+```
+
+An enum variant can be simple (no data), a tuple variant (holds unnamed data), or a struct variant (holds named fields).
+
+## Type Aliases
+
+A type alias creates a name for another type. The two types can be used interchangeably.
+
+```rust
+enum CarryableConcreteItem {
+    Left,
+    Right,
+}
+
+type Item = CarryableConcreteItem;
+```
+
+Now `Item` is simply another name for `CarryableConcreteItem`. This is different from creating a new type:
+
+```rust
+type Item = i32;
+let x: Item = 10;
+let y: i32 = x;  // works, because Item and i32 are the same type
+```
+
+Compare that with a newtype wrapper:
+
+```rust
+struct Item(i32);
+let x: Item = Item(10);
+let y: i32 = x; // error: Item is a completely different type from i32
+```
+
+Type aliases are especially useful for shortening complex types:
+
+```rust
+use std::cell::RefCell;
+use std::sync::{Arc, RwLock};
+
+type PlayerInventory = RwLock<Vec<Arc<RefCell<Item>>>>;
+```
+
+Instead of writing the full type every time, you can use `PlayerInventory`. The individual types in that signature serve different purposes: `RefCell` allows controlled mutation at runtime, `Arc` allows shared ownership across threads, `RwLock` allows controlled concurrent reading/writing, and `Vec` is a growable collection.
+
+## Option
+
+`Option<T>` is an enum that represents a value being present or absent:
+
+```rust
+enum Option<T> {
+    Some(T),
+    None,
+}
+```
+
+There are only two possibilities:
+
+- `Some(value)` → a value exists
+- `None` → no value exists
+
+```rust
+let x: Option<i32> = None;
+```
+
+This means: `x` is an `Option<i32>` but currently contains no `i32`.
+
+### Why Option Instead of Sentinel Values
+
+Suppose a function searches for a number:
+
+```rust
+fn find_number() -> Option<i32> {
+    Some(10)
+}
+```
+
+The function might find the number (`Some(10)`) or might not find it (`None`). This is safer than returning something like `-1` to mean "not found," because `-1` could itself be a legitimate number.
+
+## Result
+
+`Result` is another important Rust enum. While `Option` represents "value or no value", `Result` represents "success or error."
+
+```rust
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+```
+
+There are two variants:
+
+- `Ok(value)` → operation succeeded
+- `Err(error)` → operation failed
+
+```rust
+enum Result {
+    Ok(i32),
+    Err(String),
+}
+
+fn divide_int_two(n: i32) -> Result {
+    if n % 2 == 0 {
+        Result::Ok(n / 2)
+    } else {
+        Result::Err(format!("Cannot divide {n} into two equal parts"))
+    }
+}
+
+let n = 105;
+match divide_int_two(n) {
+    Result::Ok(half) => println!("{n} divided in two is {half}"),
+    Result::Err(msg) => println!("Sorry, an error happened: {msg}"),
+}
+```
+
+Rust also provides a standard `Result` enum (`std::result::Result<T, E>`) which you normally use directly:
+
+```rust
+fn divide_int_two(n: i32) -> Result<i32, String> {
+    if n % 2 == 0 {
+        Ok(n / 2)
+    } else {
+        Err(format!("Cannot divide {n} into two equal parts"))
+    }
+}
+
+let n = 105;
+match divide_int_two(n) {
+    Ok(half) => println!("{n} divided in two is {half}"),
+    Err(msg) => println!("Sorry, an error happened: {msg}"),
+}
+```
+
+With the standard `Result`, you write `Ok(...)` and `Err(...)` directly without the `Result::` prefix because they are brought into scope automatically.

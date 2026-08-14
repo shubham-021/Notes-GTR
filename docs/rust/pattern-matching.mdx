@@ -1,0 +1,186 @@
+---
+title: Pattern Matching
+description: Match patterns, guards, variable binding pitfalls, @ bindings, if let, while let, and let else
+---
+
+## Matching Values
+
+The `match` keyword lets you match a value against one or more patterns.
+
+```rust
+#[rustfmt::skip]
+let input = 'x';
+match input {
+    'q'                          => println!("Quitting"),
+    'a' | 's' | 'w' | 'd'       => println!("Moving around"),
+    '0'..='9'                    => println!("Number input"),
+    key if key.is_lowercase()    => println!("Lowercase: {key}"),
+    _                            => println!("Something else"),
+}
+```
+
+Ranges like `'0'..='9'` match any character in that inclusive range. Guards like `key if key.is_lowercase()` add a condition to the pattern.
+
+`#[rustfmt::skip]` tells the Rust formatter not to reformat the item it is attached to. It's useful when you have carefully aligned code (like the match arms above) that you want to preserve. It doesn't change how the program runs; it's only an instruction to the formatter.
+
+## Variable Patterns vs Literal Patterns
+
+This is a common pitfall:
+
+```rust
+let input = 'a';
+match input {
+    key if key.is_uppercase() => println!("Uppercase"),
+    key => if input == 'q' { println!("Quitting") },
+    _ => println!("Bug: this is never printed"),
+}
+```
+
+The `_` arm is never reached, because the second arm `key` captures the input unconditionally. A bare variable name in a pattern always matches and binds the value to that name.
+
+This leads to a subtle bug:
+
+```rust
+let expected = 5;
+match 123 {
+    expected => println!("Expected value is 5, actual is {expected}"),
+    _ => println!("Value was something else"),
+}
+```
+
+The naive expectation is that the first case checks whether the value is 5. But `expected` in the pattern is not the existing variable. It creates a new variable named `expected` that shadows the outer one and captures whatever value is being matched. So the flow is:
+
+```
+123 → matches variable pattern `expected` → new `expected = 123` → prints 123
+```
+
+The first arm always matches. The mental model:
+
+- Literal/value pattern → compare (`5 =>`, `'a' =>`, `true =>`)
+- Variable pattern → capture the value (`x =>`, `value =>`, `anything =>`)
+
+If you want to match against a constant, use a `const`:
+
+```rust
+const EXPECTED: i32 = 5;
+match 123 {
+    EXPECTED => println!("Got 5"),
+    _ => println!("Something else"),
+}
+```
+
+## @ Bindings
+
+The `@` operator lets you give a name to the entire matched value while also destructuring it.
+
+```rust
+let opt = Some(123);
+
+match opt {
+    outer @ Some(inner) => {
+        println!("outer: {outer:?}, inner: {inner:?}");
+    }
+    None => {}
+}
+```
+
+Without `@`, matching `Some(inner)` gives you only the inside value:
+
+```rust
+match opt {
+    Some(inner) => {
+        println!("{inner}"); // 123
+    }
+    None => {}
+}
+```
+
+At this point, you only have `inner → 123`. You don't have a variable referring to the complete `Some(123)`.
+
+With `@`, `outer @ Some(inner)` reads as: "match `Some(inner)`, but also give the entire value that matched the name `outer`."
+
+When Rust sees `Some(123)` against `outer @ Some(inner)`, it does two bindings:
+
+- Entire value: `outer → Some(123)`
+- Inside value: `inner → 123`
+
+## Destructuring Structs
+
+```rust
+#[rustfmt::skip]
+struct Move {
+    delta: (i32, i32),
+    repeat: u32,
+}
+
+let m = Move { delta: (10, 0), repeat: 5 };
+match m {
+    Move { delta: (0, 0), .. }       => println!("Standing still"),
+    Move { delta: (x, 0), repeat }   => println!("{repeat} step x: {x}"),
+    Move { delta: (0, y), repeat }   => println!("Single step y: {y}"),
+    _                                => println!("Other move"),
+}
+```
+
+You can destructure struct fields directly inside match arms. The `..` syntax means "ignore the remaining fields."
+
+## if let
+
+`if let` is a shorter way to handle one specific pattern instead of writing a full match.
+
+```rust
+let x = Some(10);
+
+if let Some(value) = x {
+    println!("{value}");
+}
+```
+
+This means: "if `x` matches `Some(value)`, extract the value and run the block." If `x` is `None`, the block is simply skipped. Unlike `match`, you don't need to handle every possible case, so use `if let` when you only care about one pattern.
+
+## while let
+
+`while let` is the looping version of `if let`.
+
+With `if let`, you check the pattern once. With `while let`, you keep checking again and again, and the loop continues as long as it matches.
+
+A very common example is `Vec::pop()`, because `pop()` returns an `Option`:
+
+```rust
+let mut numbers = vec![10, 20, 30];
+
+while let Some(value) = numbers.pop() {
+    println!("{value}");
+}
+```
+
+This pops elements off the end of the vector until it's empty. Each call to `pop()` returns `Some(value)` while there are elements left, and `None` when the vector is empty, at which point the loop stops.
+
+## let else
+
+The simplest way to think about it: "I expect this value to match this pattern. If it doesn't, get out of here."
+
+```rust
+fn example(x: Option<i32>) {
+    let Some(value) = x else {
+        return;
+    };
+    println!("value = {value}");
+}
+```
+
+If `x = Some(10)`:
+
+```
+Some(10) → matches Some(value) → value = 10 → continue with the function
+```
+
+It prints: `value = 10`.
+
+If `x = None`:
+
+```
+None → doesn't match Some(value) → run else → return
+```
+
+The function returns early. The `else` block must diverge (it must `return`, `break`, `continue`, or `panic!`).

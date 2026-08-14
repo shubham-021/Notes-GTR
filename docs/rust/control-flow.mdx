@@ -1,0 +1,218 @@
+---
+title: Control Flow
+description: If expressions, match with no fall-through, loops with labels, and the dbg macro
+---
+
+## If / Else as Expressions
+
+In Rust, `if`/`else` is an expression, meaning it produces a value:
+
+```rust
+let x = 10;
+let size = if x < 20 { "small" } else { "large" };
+println!("number size: {}", size);
+```
+
+## Match
+
+`match` lets you compare a value against patterns:
+
+```rust
+fn check(val: i32) {
+    match val {
+        1 => println!("one"),
+        10 => println!("ten"),
+        100 => println!("one hundred"),
+        _ => println!("something else"),
+    }
+}
+```
+
+`match` can also be used as an expression:
+
+```rust
+let val = match flag {
+    true => 2,
+    false => 3,
+};
+```
+
+A few important things about `match`:
+
+Match arms are evaluated from top to bottom, and the first one that matches has its corresponding body executed. There is no fall-through between cases the way `switch` works in other languages.
+
+The `_` is a catch-all, not a fall-through. Rust's `match` chooses exactly one arm and then stops. `_` simply means "anything that hasn't matched yet."
+
+```rust
+match x {
+    1 => println!("one"),
+    2 => println!("two"),
+    _ => println!("something else"),
+}
+```
+
+If `x = 2`, only `two` is printed. It does not continue into `_`.
+
+Compare this with C++ `switch`:
+
+```cpp
+switch (x) {
+    case 1:
+        cout << "one";
+    case 2:
+        cout << "two";
+}
+```
+
+If `x == 1`, you get `onetwo` because it falls through.
+
+If you want multiple values to execute the same arm, Rust has pattern alternatives:
+
+```rust
+match x {
+    1 | 2 | 3 => println!("small"),
+    4 | 5 => println!("medium"),
+    _ => println!("other"),
+}
+```
+
+So think: `_` = catch-all, not fall-through.
+
+## While Loops
+
+```rust
+let mut x = 200;
+while x >= 10 {
+    x = x / 2;
+}
+dbg!(x);
+```
+
+## The dbg! Macro
+
+`dbg!()` is Rust's quick debugging macro. It prints the value of an expression and returns that value, so you can inspect something without changing your program's logic.
+
+Compared with `println!`:
+
+```rust
+let x = 10;
+println!("{}", x);
+```
+
+This just prints `10`.
+
+Whereas:
+
+```rust
+let x = 10;
+dbg!(x);
+```
+
+Prints useful debugging information: `[src/main.rs:3:5] x = 10`. It tells you where the debug call happened and what expression produced the value.
+
+The useful part is that it returns the value:
+
+```rust
+let x = dbg!(10);
+let y = dbg!(x * 2);
+println!("{}", y);
+```
+
+You see the intermediate values while the program still works normally. You can even put it directly into an expression:
+
+```rust
+let result = dbg!(5) + dbg!(10);
+```
+
+A good mental model is: `dbg!(expression)` = "show me this expression's value, then give me the value back."
+
+## For Loops
+
+```rust
+for x in 1..5 {
+    dbg!(x);
+}
+```
+
+`1..5` iterates from 1 to 4 (exclusive upper bound), similar to `for(int i=1; i<5; i++)` in C.
+
+Use `=` to make it inclusive:
+
+```rust
+for x in 1..=5 {
+    dbg!(x);
+}
+```
+
+This iterates from 1 to 5, same as `for(int i=1; i<=5; i++)`.
+
+You can also iterate directly over arrays:
+
+```rust
+for elem in [2, 4, 8, 16, 32] {
+    dbg!(elem);
+}
+```
+
+Under the hood, `for` loops use a concept called "iterators" to handle iterating over different kinds of ranges and collections.
+
+## Loop
+
+`loop` creates an infinite loop that runs until a `break`:
+
+```rust
+let mut i = 0;
+loop {
+    i += 1;
+    dbg!(i);
+    if i > 100 {
+        break;
+    }
+}
+```
+
+`break` exits the loop, `continue` skips to the next iteration. Both work the same way as in other languages.
+
+## Loop Labels
+
+When you have nested loops, a plain `break` only exits the innermost loop. Labels let you target a specific loop.
+
+```rust
+let s = [[5, 6, 7], [8, 9, 10], [11, 12, 13]];
+let mut elements_searched = 0;
+let target_value = 10;
+
+'outer: for i in 0..=2 {
+    for j in 0..=2 {
+        elements_searched += 1;
+        if s[i][j] == target_value {
+            break 'outer;
+        }
+    }
+}
+dbg!(elements_searched);
+```
+
+Without the label, `break` would only exit the inner `j` loop, and the outer `i` loop would continue with the next iteration.
+
+A Rust loop label must start with `'`. You give the outer loop a label with `'outer:`, and then `break 'outer` means "break out of the loop labeled `'outer`."
+
+Walking through the example:
+
+```
+i=0, j=0 → 5
+i=0, j=1 → 6
+i=0, j=2 → 7
+i=1, j=0 → 8
+i=1, j=1 → 9
+i=1, j=2 → 10  ← found
+```
+
+At that point, `break 'outer` immediately exits both loops. So `elements_searched` is `6`.
+
+The full set:
+
+- `break` → exit a loop
+- `continue` → skip to the next iteration
+- `break 'outer` → exit the specifically labeled loop
+- `continue 'outer` → continue the specifically labeled loop

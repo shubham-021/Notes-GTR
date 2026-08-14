@@ -1,127 +1,137 @@
 ---
 title: Structs
-description: Defining custom data types with structs and implementing methods
+description: Defining structs, struct update syntax, Debug trait, tuple structs, and zero-sized types
 ---
 
-Structs group related data together.
-
-## Defining and Instantiating
+## Defining and Using Structs
 
 ```rust
-struct User {
-    username: String,
-    email: String,
-    sign_in_count: u64,
-    active: bool,
+struct Person {
+    name: String,
+    age: u8,
 }
 
-fn main() {
-    // Create instance
-    let user1 = User {
-        email: String::from("user@example.com"),
-        username: String::from("user123"),
-        active: true,
-        sign_in_count: 1,
-    };
-
-    // Access fields
-    println!("{}", user1.username);
-
-    // Mutable instance
-    let mut user2 = User {
-        email: String::from("another@example.com"),
-        username: String::from("another"),
-        active: true,
-        sign_in_count: 1,
-    };
-    user2.email = String::from("new@example.com");
+fn describe(person: &Person) {
+    println!("{} is {} years old", person.name, person.age);
 }
+
+let mut peter = Person {
+    name: String::from("Peter"),
+    age: 27,
+};
+describe(&peter);
+
+peter.age = 28;
+describe(&peter);
 ```
+
+The function takes `&Person` (a reference), meaning it borrows the struct without taking ownership.
+
+## Field Init Shorthand
+
+When you have variables with the same name as the struct fields, you can use the shorthand:
+
+```rust
+let name = String::from("Jean");
+let age = 39;
+let jean = Person { name, age };
+```
+
+Instead of writing `name: name, age: age`.
 
 ## Struct Update Syntax
 
-Create a new instance using values from another:
+Create a new struct using values from an existing one:
 
 ```rust
-let user2 = User {
-    email: String::from("another@example.com"),
-    ..user1  // Use remaining fields from user1
+let ned = Person {
+    name: String::from("Ned"),
+    ..jean
 };
+```
+
+`..jean` copies the remaining fields from `jean`. It must always be the last element.
+
+## Debug Trait
+
+A custom struct doesn't implement the Debug trait on its own, so `println!("{ned:?}")` and `dbg!(ned)` would both fail to compile.
+
+You can tell Rust to automatically implement Debug for your struct using `#[derive(Debug)]`:
+
+```rust
+#[derive(Debug)]
+struct Animal {
+    name: String,
+    action: String,
+    age: u8,
+}
+
+let dog = Animal {
+    name: String::from("Fuggu"),
+    action: String::from("bark"),
+    age: 8,
+};
+
+dbg!(&dog);
+println!("Dog: {dog:?}");
+```
+
+Both work now. The struct update syntax works here too:
+
+```rust
+let cat = Animal {
+    name: String::from("Cat"),
+    ..dog
+};
+println!("Cat: {cat:?}");
 ```
 
 ## Tuple Structs
 
-Structs without named fields:
+If the field names are unimportant, you can use a tuple struct:
 
 ```rust
-struct Color(i32, i32, i32);
-struct Point(i32, i32, i32);
+struct Point(i32, i32);
 
-fn main() {
-    let black = Color(0, 0, 0);
-    let origin = Point(0, 0, 0);
-}
+let p = Point(17, 23);
+println!("({}, {})", p.0, p.1);
 ```
 
-## Unit-Like Structs
+The major advantage over a plain tuple is type safety. `struct Point(i32, i32)` and `struct Size(i32, i32)` are different types even though both contain two `i32`s. Rust won't let you accidentally use a `Size` where a `Point` is expected.
 
-Structs with no fields:
+They're also useful for wrapping a single value into a distinct type:
 
 ```rust
-struct AlwaysEqual;  // No fields
-
-fn main() {
-    let subject = AlwaysEqual;
-}
+struct Celsius(f64);
+struct Fahrenheit(f64);
 ```
 
-## Methods with impl
+`Celsius(25.0)` and `Fahrenheit(80.0)` are different types despite both internally containing an `f64`.
+
+Think of a tuple struct as a lightweight way to create a new type without having to name each field.
+
+## Zero-Sized Types
+
+A zero-sized type (ZST) is a struct that contains no data but can still represent a type or provide some behavior.
 
 ```rust
-struct Rect {
-    width: f32,
-    height: f32,
-}
+struct NullReader;
 
-impl Rect {
-    // Method (takes &self)
-    fn area(&self) -> f32 {
-        self.width * self.height
-    }
+let reader = NullReader;
+```
 
-    // Method that mutates
-    fn scale(&mut self, factor: f32) {
-        self.width *= factor;
-        self.height *= factor;
-    }
+Since it contains no data, there's nothing to distinguish between two instances like `let a = NullReader` and `let b = NullReader` -- both simply represent `NullReader`.
 
-    // Associated function (no self - like static method)
-    fn square(size: f32) -> Rect {
-        Rect {
-            width: size,
-            height: size,
-        }
+The usefulness comes from giving the type behavior:
+
+```rust
+impl NullReader {
+    fn read(&self) {
+        println!("EOF");
     }
 }
 
-fn main() {
-    let rect = Rect {
-        width: 10.0,
-        height: 20.0,
-    };
-
-    println!("Area: {}", rect.area());
-
-    // Call associated function
-    let square = Rect::square(5.0);
-}
+reader.read();
 ```
 
-## Method Types
-
-| Signature | Type | Use Case |
-|-----------|------|----------|
-| `&self` | Immutable borrow | Read data |
-| `&mut self` | Mutable borrow | Modify data |
-| `self` | Takes ownership | Consume/transform |
-| No self | Associated function | Constructors |
+A ZST is useful when you need a type to represent a concept or behavior rather than actual data.

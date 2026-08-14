@@ -1,138 +1,243 @@
 ---
 title: Traits
-description: Defining shared behavior similar to interfaces in other languages
+description: Trait definition, implementation, supertraits, associated types, and deriving
 ---
-
-Traits define shared behavior, similar to interfaces in other languages.
 
 ## Defining Traits
 
-```rust
-trait Summary {
-    fn summarize(&self) -> String;
+Rust lets you abstract over types with traits. They're similar to interfaces:
 
-    // Default implementation
-    fn default_summary(&self) -> String {
-        String::from("(Read more...)")
+```rust
+trait Pet {
+    fn talk(&self) -> String;
+
+    fn greet(&self) {
+        println!("Oh you're a cutie! What's your name? {}", self.talk());
     }
 }
 ```
 
 ## Implementing Traits
 
+To implement a trait for a type, you use an `impl Trait for Type { .. }` block:
+
 ```rust
-struct NewsArticle {
-    headline: String,
-    author: String,
-    content: String,
+struct Dog {
+    name: String,
+    age: i8,
 }
 
-impl Summary for NewsArticle {
-    fn summarize(&self) -> String {
-        format!("{}, by {}", self.headline, self.author)
+impl Pet for Dog {
+    fn talk(&self) -> String {
+        format!("Woof, my name is {}!", self.name)
     }
 }
 
-struct Tweet {
-    username: String,
-    content: String,
+let fido = Dog { name: String::from("Fido"), age: 5 };
+dbg!(fido.talk());
+fido.greet();
+```
+
+Just having matching methods is not enough: a `Cat` type with a `talk()` method would not automatically satisfy `Pet` unless it is in an `impl Pet` block.
+
+If a trait method has no body, the implementing type must provide it. If a trait method has a body (like `greet` above), the implementing type gets it automatically but can override it.
+
+## Multiple Trait Implementations
+
+You can implement multiple traits for the same type:
+
+```rust
+trait Pet {
+    fn talk(&self);
 }
 
-impl Summary for Tweet {
-    fn summarize(&self) -> String {
-        format!("{}: {}", self.username, self.content)
+trait Animal {
+    fn eat(&self);
+}
+
+impl Pet for Dog {
+    fn talk(&self) {
+        println!("Woof!");
+    }
+}
+
+impl Animal for Dog {
+    fn eat(&self) {
+        println!("Dog is eating");
     }
 }
 ```
 
-## Traits as Parameters
+So `Dog` has its own methods, plus `Pet` behavior, plus `Animal` behavior. These `impl` blocks can even be placed in different modules or files:
+
+```
+dog.rs
+    struct Dog
+    impl Dog { ... }
+
+pet.rs
+    impl Pet for Dog { ... }
+
+animal.rs
+    impl Animal for Dog { ... }
+```
+
+As long as Rust's rules about visibility and trait implementations are satisfied.
+
+## Supertraits
 
 ```rust
-// Using impl Trait
-fn notify(item: &impl Summary) {
-    println!("Breaking news! {}", item.summarize());
+trait Animal {
+    fn leg_count(&self) -> u32;
 }
 
-// Trait bound syntax (more flexible)
-fn notify<T: Summary>(item: &T) {
-    println!("Breaking news! {}", item.summarize());
-}
-
-// Multiple trait bounds
-fn notify<T: Summary + Display>(item: &T) {
-    // ...
-}
-
-// where clause for clarity
-fn some_function<T, U>(t: &T, u: &U) -> i32
-where
-    T: Display + Clone,
-    U: Clone + Debug,
-{
-    // ...
+trait Pet: Animal {
+    fn name(&self) -> String;
 }
 ```
 
-## Returning Types that Implement Traits
+`trait Pet: Animal` means "anything that is a `Pet` must also be an `Animal`." This creates a requirement:
+
+```
+Pet → (requires) → Animal
+```
+
+So if you write `impl Pet for Dog`, Rust will also require `impl Animal for Dog`:
 
 ```rust
-fn returns_summarizable() -> impl Summary {
-    Tweet {
-        username: String::from("horse_ebooks"),
-        content: String::from("of course, as you probably already know, people"),
+struct Dog(String);
+
+impl Animal for Dog {
+    fn leg_count(&self) -> u32 {
+        4
+    }
+}
+
+impl Pet for Dog {
+    fn name(&self) -> String {
+        self.0.clone()
+    }
+}
+
+let puppy = Dog(String::from("Rex"));
+println!("{} has {} legs", puppy.name(), puppy.leg_count());
+```
+
+This is useful because `Pet` can now assume that the type has all the behavior of `Animal`. For example, a default method inside `Pet` could call `self.leg_count()` even though `leg_count()` is not defined inside `Pet`:
+
+```rust
+trait Pet: Animal {
+    fn name(&self) -> String;
+
+    fn introduce(&self) {
+        println!(
+            "I'm {}, and I have {} legs",
+            self.name(),
+            self.leg_count()
+        );
     }
 }
 ```
 
-## Practical Example
+This is sometimes called "trait inheritance" but it should not be expected to behave like OO inheritance. It just specifies an additional requirement on implementations of a trait.
+
+## Associated Types
+
+Associated types (sometimes called "output types") let a trait declare a placeholder type that implementations must specify.
 
 ```rust
-use std::f32::consts::PI;
+#[derive(Debug)]
+struct Meters(i32);
 
-trait Shape {
-    fn area(&self) -> f32;
-    fn perimeter(&self) -> f32;
-}
+#[derive(Debug)]
+struct MetersSquared(i32);
 
-struct Circle {
-    radius: f32,
-}
-
-struct Rectangle {
-    width: f32,
-    height: f32,
-}
-
-impl Shape for Circle {
-    fn area(&self) -> f32 {
-        PI * self.radius * self.radius
-    }
-
-    fn perimeter(&self) -> f32 {
-        2.0 * PI * self.radius
-    }
-}
-
-impl Shape for Rectangle {
-    fn area(&self) -> f32 {
-        self.width * self.height
-    }
-
-    fn perimeter(&self) -> f32 {
-        2.0 * (self.width + self.height)
-    }
-}
-
-fn print_shape_info<T: Shape>(shape: &T) {
-    println!("Area: {}", shape.area());
-    println!("Perimeter: {}", shape.perimeter());
-}
-
-fn main() {
-    let circle = Circle { radius: 10.0 };
-    let rect = Rectangle { width: 10.0, height: 20.0 };
-
-    print_shape_info(&circle);
-    print_shape_info(&rect);
+trait Multiply {
+    type Output;
+    fn multiply(&self, other: &Self) -> Self::Output;
 }
 ```
+
+`type Output` means: every type that implements `Multiply` must tell the trait what type the multiplication produces.
+
+Inside the trait:
+
+- `self` = the current instance/value
+- `Self` = the type being implemented
+- `Self::Output` = the `Output` type associated with the current type
+
+The `::` is being used to access something associated with a type.
+
+```rust
+impl Multiply for Meters {
+    type Output = MetersSquared;
+
+    fn multiply(&self, other: &Self) -> Self::Output {
+        MetersSquared(self.0 * other.0)
+    }
+}
+
+println!("{:?}", Meters(10).multiply(&Meters(20)));
+```
+
+Here we're saying: for `Meters`, `Multiply` produces `MetersSquared`. So inside this implementation, `Self = Meters` and `Self::Output = MetersSquared`.
+
+### Why Not Just Use a Generic?
+
+You could imagine:
+
+```rust
+trait Multiply<T> {
+    fn multiply(&self, other: &Self) -> T;
+}
+```
+
+But associated types are useful when there should be one specific output type for a particular implementation. With the associated type version, Rust knows that `Meters`'s `Multiply` implementation always produces `MetersSquared`. There's exactly one answer, not a choice.
+
+Mentally:
+
+```
+trait Multiply
+    |- type Output = "you tell me the result type"
+
+Meters implements Multiply
+    |- Output = MetersSquared
+```
+
+## Deriving Traits
+
+Supported traits can be automatically implemented for your custom types:
+
+```rust
+#[derive(Debug, Clone, Default)]
+struct Player {
+    name: String,
+    strength: u8,
+    hit_points: u8,
+}
+
+let p1 = Player::default();
+let mut p2 = p1.clone();
+p2.name = String::from("EldurScrollz");
+println!("{p1:?} vs. {p2:?}");
+```
+
+- `Default` trait adds a `default()` constructor that initializes all fields to their default values (empty string, 0, etc.)
+- `Clone` trait adds a `clone()` method for explicit deep copying
+- `Debug` trait adds support for printing with `{:?}`
+
+Derivation is usually provided for traits that have a common boilerplate implementation that is correct for most cases. For example, a manual `Clone` impl would look like this:
+
+```rust
+impl Clone for Player {
+    fn clone(&self) -> Self {
+        Player {
+            name: self.name.clone(),
+            strength: self.strength.clone(),
+            hit_points: self.hit_points.clone(),
+        }
+    }
+}
+```
+
+Not all of the `.clone()` calls above are necessary in this case (primitive types implement `Copy`), but this demonstrates the repetitive pattern that manual implementations would follow, which should help make the usefulness of `derive` clear.

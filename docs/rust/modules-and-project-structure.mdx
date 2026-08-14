@@ -1,0 +1,88 @@
+---
+title: Modules and Project Structure
+description: File-based modules, pub visibility, crate root, and multiple binaries
+---
+
+## File-Based Modules
+
+Suppose you have:
+
+```
+src/
+|-- main.rs
+|-- math.rs
+|-- strings.rs
+```
+
+In `math.rs`:
+
+```rust
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+```
+
+In `strings.rs`:
+
+```rust
+pub fn greet() {
+    println!("Hello!");
+}
+```
+
+Then in `main.rs`:
+
+```rust
+mod math;
+mod strings;
+
+fn main() {
+    println!("{}", math::add(10, 20));
+    strings::greet();
+}
+```
+
+The `pub` keyword is important because functions are private by default. `main.rs` is the crate root, and `mod math;` tells Rust to load `math.rs` as a module.
+
+## Multiple Binaries
+
+You can have multiple executable files in one Cargo project. Instead of putting everything in `src/` alongside `main.rs`, use the `src/bin/` directory:
+
+```
+src/
+|-- main.rs
+|-- bin/
+    |-- program1.rs
+    |-- program2.rs
+```
+
+Each file in `src/bin/` needs its own `fn main()`:
+
+```rust
+// src/bin/program1.rs
+fn main() {
+    println!("Program 1");
+}
+```
+
+```rust
+// src/bin/program2.rs
+fn main() {
+    println!("Program 2");
+}
+```
+
+Now you have three executables: `main`, `program1`, and `program2`.
+
+Run the default `main.rs`:
+
+```bash
+cargo run
+```
+
+Run a specific one:
+
+```bash
+cargo run --bin program1
+cargo run --bin program2
+```

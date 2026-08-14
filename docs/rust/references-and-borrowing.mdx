@@ -1,91 +1,140 @@
 ---
 title: References and Borrowing
-description: Borrowing values without taking ownership using references
+description: Shared references, exclusive references, slices, and reference validity
 ---
 
-References allow you to refer to a value without taking ownership.
+## The & Operator
 
-## Immutable References
+In Rust, `&` is best understood as the reference/borrow operator, not simply as an operator that retrieves a memory address. When you write `&x`, you are saying "give me a reference to x without taking ownership of it."
 
-```rust
-fn main() {
-    let s = String::from("hello");
-    let len = get_length(&s);  // Borrow s
-    println!("Length of '{}' is {}", s, len);  // s is still valid
-}
+If `fn print_user(user: User)` takes a `User`, calling `print_user(user)` moves ownership of `user` into the function, so you can't use `user` afterward. But if the function is `fn print_user(user: &User)`, you call it with `print_user(&user)`, and the function can read `user` while you retain ownership and can continue using it.
 
-fn get_length(s: &String) -> usize {
-    s.len()
-}  // s goes out of scope but nothing is dropped (we don't own it)
-```
+Similarly, `&mut` means "give me an exclusive mutable reference." So `fn change_age(user: &mut User)` can modify the original with `change_age(&mut user)`.
 
-The `&` creates a reference that borrows the value.
+Think of `&` as "lend/borrow this value", while `&mut` means "lend this value exclusively with permission to modify it." The compiler guarantees that these references remain valid, don't outlive their data, and follow Rust's borrowing rules.
 
-## Mutable References
+## Shared References
+
+A reference provides a way to access another value without taking ownership of the value. This is also called "borrowing". Shared references are read-only, and the referenced data cannot change.
 
 ```rust
-fn main() {
-    let mut s = String::from("hello");
-    change(&mut s);
-    println!("{}", s);  // Output: hello world
-}
+let a = 'A';
+let b = 'B';
 
-fn change(s: &mut String) {
-    s.push_str(" world");
-}
+let mut r: &char = &a;
+dbg!(r); // 'A'
+
+r = &b;
+dbg!(r); // 'B'
 ```
 
-## Borrowing Rules
-
-1. You can have either **one mutable reference** OR **any number of immutable references**
-2. References must always be valid (no dangling references)
+Here `r` is a mutable variable that holds a shared reference. You can change which value `r` points to (because `r` itself is `mut`), but you cannot modify the value through the reference:
 
 ```rust
-fn main() {
-    let mut s = String::from("hello");
-
-    let r1 = &s;     // OK
-    let r2 = &s;     // OK - multiple immutable references
-    println!("{} and {}", r1, r2);
-
-    let r3 = &mut s; // OK - r1 and r2 are no longer used
-    println!("{}", r3);
-}
+*r = 'X'; // error: cannot assign to `*r`, which is behind a `&` reference
 ```
 
-## String Slices
+A shared reference does not allow modifying the value it refers to, even if that value was mutable.
 
-Slices let you reference a portion of a string:
+## Exclusive References
 
 ```rust
-fn main() {
-    let s = String::from("hello world");
-
-    let hello: &str = &s[0..5];   // "hello"
-    let world: &str = &s[6..11];  // "world"
-
-    // Shorthand
-    let hello = &s[..5];   // From beginning
-    let world = &s[6..];   // To end
-    let whole = &s[..];    // Entire string
-}
-
-fn first_word(s: &str) -> &str {
-    let bytes = s.as_bytes();
-    for (i, &item) in bytes.iter().enumerate() {
-        if item == b' ' {
-            return &s[..i];
-        }
-    }
-    &s[..]
-}
+let mut point = (1, 2);
+let x_coord = &mut point.0;
+*x_coord = 20;
+println!("point: {point:?}"); // (20, 2)
 ```
 
-## Summary
+"Exclusive" means that only this reference can be used to access the value. No other references (shared or exclusive) can exist at the same time, and the referenced value cannot be accessed while the exclusive reference exists.
 
-| Syntax | Meaning |
-|--------|---------|
-| `&T` | Immutable reference to T |
-| `&mut T` | Mutable reference to T |
-| `&s[..]` | Slice of entire string |
-| `&s[0..5]` | Slice from index 0 to 4 |
+```rust
+point.0 = 2;
+println!("point: {point:?}");
+```
+
+This does not create any problem, because `x_coord` is treated as dead by this line since it is no longer used afterward.
+
+But if you added `print!("{x_coord}")` after that line, accessing `point` directly would be an error, since that would mean `x_coord` is still alive and it has a mutable reference to the same address. This is Rust's Non-Lexical Lifetimes (NLL) optimization: the compiler figures out when a reference is last used, not just when it goes out of scope.
+
+## Reference Validity
+
+Rust enforces rules that make references always safe to use. One rule is that references can never be null, making them safe to use without null checks. Another rule is that references can't outlive the data they point to.
+
+```rust
+let x_ref = {
+    let x = 10;
+    &x
+};
+
+dbg!(x_ref); // error
+```
+
+`x` no longer exists after the `}`, but you are trying to store its reference in `x_ref`. That would mean `x_ref` points to something that no longer exists. That's a dangling reference, which Rust prevents at compile time.
+
+## Slices
+
+A slice is a reference to a portion of a collection.
+
+```rust
+let a: [i32; 6] = [10, 20, 30, 40, 50, 60];
+println!("a: {a:?}");
+
+let s = &a[2..4]; // type: &[i32], contains [30, 40]
+println!("s: {s:?}");
+```
+
+The range `2..4` is half-open: it includes index 2 but excludes index 4.
+
+Slices work on strings too:
+
+```rust
+let s = String::from("Hello");
+let sl = &s[1..4];
+println!("sl: {sl:?}"); // "ell"
+```
+
+If starting from the 0th index, you can drop the 0:
+
+```rust
+let b = [1, 2, 3, 4, 5];
+let sl = &b[..4];        // same as &b[0..4]
+let sl = &b[..b.len()];  // the whole array
+```
+
+The most common slice types you'll see are:
+
+- `&[T]` → slice of an array or vector
+- `&str` → slice of string data
+
+### Slices Don't Own Data
+
+An array owns all its elements; a slice is just a view into some of those elements.
+
+```rust
+let arr = [10, 20, 30, 40];
+let s = &arr[1..3];
+```
+
+`arr` owns the values. `s` just borrows them.
+
+You can't grow a slice once it's created:
+
+- You can't append elements to the slice, since it doesn't own the backing buffer.
+- You can't grow a slice to point to a larger section of the backing buffer. A slice does not have information about the length of the underlying buffer, so you can't know how large the slice can be grown.
+- To get a larger slice, you have to go back to the original buffer and create a larger slice from there.
+
+### &str as a Slice
+
+`&str` is a slice of UTF-8 encoded bytes, similar to `&[u8]`.
+
+A string literal and a string slice both have the type `&str`, with one subtle distinction in where their data comes from:
+
+```rust
+let s = "hello";
+let lit_sl: &str = &s[..4];      // data comes from the binary's read-only memory
+
+let s = String::from("hello");
+let str_sl: &str = &s[..4];      // data comes from the heap
+```
+
+Both `lit_sl` and `str_sl` are `&str`, but the underlying data lives in different places.
