@@ -1,0 +1,768 @@
+---
+title: Shell Fundamentals
+description: Exit codes, environment variables, quoting, expansion, signals, jobs, and the mechanics behind how a shell actually works
+---
+
+## What is a Shell
+
+A shell is a program that reads commands you type, interprets them, and asks the operating system to execute them. When you open a terminal, the terminal application launches a shell process inside it. That shell sits in a loop: it prints a prompt, waits for you to type something, parses what you typed, runs it, and then prints the prompt again.
+
+The most common shells on Linux and macOS are `bash` (Bourne Again Shell) and `zsh` (Z Shell). macOS defaults to `zsh` since Catalina. Most Linux distributions default to `bash`. The concepts in this document apply to both.
+
+The shell is not the terminal. The terminal is the window application that displays text. The shell is the program running inside that window. You could run a shell without a terminal (for example, in a script), and you could run a terminal with a different shell.
+
+---
+
+## Exit Codes
+
+Every command you run produces an **exit code** when it finishes. This is a number between 0 and 255 that the command returns to the shell.
+
+The convention is universal across Unix:
+
+- **0** means success
+- **Any non-zero value** means failure
+
+The shell stores the exit code of the most recently finished command in a special variable called `$?`.
+
+```bash
+ls /tmp
+echo $?
+# 0
+```
+
+The `ls` command succeeded, so it returned 0.
+
+```bash
+ls /nonexistent
+echo $?
+# 2
+```
+
+The `ls` command failed because the path does not exist. It returned 2 (which `ls` uses to mean "a serious problem occurred").
+
+You must read `$?` immediately after the command you care about. Running any other command, even `echo`, overwrites `$?` with its own exit code.
+
+```bash
+ls /nonexistent
+echo "something"
+echo $?
+# 0
+```
+
+Here `$?` is 0 because the last command that ran was `echo "something"`, which succeeded. The exit code from the failed `ls` is gone.
+
+### Common Exit Code Conventions
+
+Different programs use different non-zero codes to indicate different kinds of failures. There is no universal standard beyond "0 = success, non-zero = failure," but some patterns are widely followed:
+
+- **1** means a general error. Most programs use this as a catch-all.
+- **2** means misuse of a command (wrong arguments, invalid options).
+- **126** means the command was found but is not executable (missing execute permission).
+- **127** means the command was not found at all.
+- **128 + N** means the command was killed by signal N. For example, 137 means killed by signal 9 (SIGKILL), because 128 + 9 = 137.
+- **130** means the command was interrupted by Ctrl+C (signal 2, SIGINT), because 128 + 2 = 130.
+
+### Using Exit Codes in Scripts
+
+Exit codes are the foundation of conditional logic in shell scripts.
+
+```bash
+if grep -q "error" logfile.txt; then
+    echo "Errors found"
+else
+    echo "No errors"
+fi
+```
+
+The `-q` flag tells `grep` to be quiet (produce no output). `grep` returns 0 if it found a match, and 1 if it did not. The `if` statement checks that exit code.
+
+You can also set your own exit code when writing scripts:
+
+```bash
+#!/bin/bash
+if [ ! -f "$1" ]; then
+    echo "File not found: $1"
+    exit 1
+fi
+echo "Processing $1"
+exit 0
+```
+
+The `exit` command terminates the script and returns the specified code to whatever called it.
+
+---
+
+## Environment Variables
+
+An environment variable is a named value stored in a process's environment. Every process on a Unix system has an environment, which is a collection of key-value pairs. When a process creates a child process, the child inherits a copy of the parent's environment.
+
+Environment variables are used for configuration. Instead of hardcoding values, programs read their configuration from the environment. This is a fundamental Unix pattern.
+
+```bash
+echo $HOME
+# /home/user
+
+echo $USER
+# user
+
+echo $SHELL
+# /bin/zsh
+```
+
+The `$` prefix tells the shell "this is a variable, give me its value." Without the `$`, the shell treats it as a literal string.
+
+### Setting Variables
+
+There are two kinds of variables in a shell: **shell variables** and **environment variables**.
+
+A shell variable exists only inside the current shell process. It is not passed to any child processes.
+
+```bash
+MY_VAR="hello"
+echo $MY_VAR
+# hello
+```
+
+If you run another program from this shell, that program will not see `MY_VAR`. It is local to this shell.
+
+### export
+
+The `export` command promotes a shell variable to an environment variable. Environment variables are inherited by child processes.
+
+```bash
+export MY_VAR="hello"
+bash -c 'echo $MY_VAR'
+# hello
+```
+
+The `bash -c` command starts a new child shell process and runs the given command inside it. Because `MY_VAR` was exported, the child process inherited it.
+
+Without `export`:
+
+```bash
+MY_VAR="hello"
+bash -c 'echo $MY_VAR'
+#
+```
+
+The child process has no knowledge of `MY_VAR`. It prints nothing.
+
+You can also export and assign in one step:
+
+```bash
+export DATABASE_URL="postgres://localhost:5432/mydb"
+```
+
+Or export an existing variable:
+
+```bash
+API_KEY="abc123"
+export API_KEY
+```
+
+To remove a variable entirely:
+
+```bash
+unset MY_VAR
+```
+
+### How Inheritance Works
+
+When process A creates process B, process B gets a **copy** of A's environment at the moment of creation. After that, they are independent. If A changes a variable later, B does not see the change. If B changes a variable, A does not see it either. Environment variables flow downward (parent to child) only, never upward (child to parent).
+
+This is why you cannot `cd` in a script and expect the parent shell to be in the new directory. The script runs in a child process. Its working directory change does not affect the parent.
+
+---
+
+## PATH
+
+`PATH` is the most important environment variable. It tells the shell where to look for executable programs.
+
+When you type a command like `node`, the shell does not magically know where the `node` binary lives on disk. It searches through a list of directories, in order, looking for an executable file named `node`. That list of directories is the `PATH` variable.
+
+```bash
+echo $PATH
+# /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+```
+
+The directories are separated by colons (`:`). The shell searches them left to right. When you type `node`, it checks:
+
+1. Is there an executable called `node` in `/usr/local/bin`? If yes, run it.
+2. Is there one in `/usr/bin`? If yes, run it.
+3. Is there one in `/bin`?
+4. And so on.
+
+The first match wins. If no match is found in any directory, you get "command not found."
+
+### Adding to PATH
+
+To add a directory to `PATH`:
+
+```bash
+export PATH="$PATH:/my/custom/bin"
+```
+
+This appends `/my/custom/bin` to the end of the existing `PATH`. Now the shell will also look in `/my/custom/bin` when searching for commands.
+
+The order matters. If you want your custom directory to take priority over system directories:
+
+```bash
+export PATH="/my/custom/bin:$PATH"
+```
+
+Now `/my/custom/bin` is searched first.
+
+To make this permanent, add the `export` line to your shell configuration file (`~/.bashrc` for bash, `~/.zshrc` for zsh). These files are executed every time a new shell starts.
+
+### Why Commands Like cd Do Not Need PATH
+
+Some commands are not separate programs on disk. They are **built into the shell itself**. `cd` is one of them. The shell handles `cd` directly because changing the working directory must happen inside the shell process itself. If `cd` were an external program, it would change the directory of the child process and then exit, leaving the shell's directory unchanged.
+
+Other built-in commands include `echo`, `export`, `alias`, `source`, and `exit`.
+
+---
+
+## Quoting
+
+Quoting controls how the shell interprets special characters. The shell treats many characters specially: spaces split arguments, `$` triggers variable expansion, `*` triggers globbing, and so on. Quoting lets you control when these special behaviors happen and when they do not.
+
+### Single Quotes
+
+Single quotes preserve **everything** literally. Nothing inside single quotes is interpreted by the shell. No variable expansion, no globbing, no escape sequences.
+
+```bash
+echo 'Hello $USER'
+# Hello $USER
+
+echo 'File is *.txt'
+# File is *.txt
+
+echo 'Line 1\nLine 2'
+# Line 1\nLine 2
+```
+
+The `$USER` is not expanded. The `*` is not expanded. The `\n` is not treated as a newline. Everything prints exactly as typed.
+
+Use single quotes when you want the shell to keep its hands off.
+
+### Double Quotes
+
+Double quotes allow **variable expansion** and **command substitution**, but prevent word splitting and globbing.
+
+```bash
+echo "Hello $USER"
+# Hello alice
+
+echo "Home is $HOME"
+# Home is /home/alice
+
+echo "Files: *.txt"
+# Files: *.txt
+```
+
+Variables are expanded, but `*.txt` is not globbed. It stays as the literal string `*.txt`.
+
+Double quotes are what you should use most of the time. They let variables work while preventing the shell from doing unwanted splitting or globbing on the result.
+
+An important practical case:
+
+```bash
+filename="my file.txt"
+cat $filename    # WRONG: shell sees two arguments: "my" and "file.txt"
+cat "$filename"  # RIGHT: shell sees one argument: "my file.txt"
+```
+
+Without quotes, the shell splits the value of `$filename` on spaces, producing two separate arguments. With double quotes, the entire value is treated as one argument.
+
+### Backslash
+
+A backslash escapes a single character, preventing the shell from treating it specially.
+
+```bash
+echo \$USER
+# $USER
+
+echo hello\ world
+# hello world
+```
+
+The backslash before `$` prevents variable expansion. The backslash before the space prevents the shell from treating it as an argument separator.
+
+Inside double quotes, the backslash only escapes `$`, `` ` ``, `"`, `\`, and newline. Other characters are treated literally.
+
+```bash
+echo "Price is \$5"
+# Price is $5
+
+echo "She said \"hello\""
+# She said "hello"
+```
+
+---
+
+## Command Substitution
+
+Command substitution lets you use the output of one command as part of another command. The syntax is `$(command)`.
+
+```bash
+echo "Today is $(date +%A)"
+# Today is Friday
+
+echo "You are $(whoami)"
+# You are alice
+```
+
+The shell runs the command inside `$(...)`, captures its stdout, and replaces the `$(...)` with that output.
+
+You can use it anywhere, not just in `echo`:
+
+```bash
+files=$(ls *.txt)
+echo "$files"
+
+count=$(wc -l < logfile.txt)
+echo "Log has $count lines"
+```
+
+### Nesting
+
+Command substitutions can be nested:
+
+```bash
+echo "Kernel: $(uname -r), Arch: $(uname -m)"
+# Kernel: 5.15.0-generic, Arch: x86_64
+```
+
+### The Backtick Form
+
+There is an older syntax using backticks:
+
+```bash
+echo "Today is `date +%A`"
+```
+
+This does the same thing as `$(date +%A)`. The `$(...)` form is preferred because it is easier to read, easier to nest, and less error-prone. You will encounter backticks in older scripts and documentation, but you should use `$(...)` in anything you write.
+
+---
+
+## Shell Expansion
+
+Before the shell runs a command, it performs several types of expansion on the command line. Understanding this is critical because the command you type is not necessarily the command that runs. The shell transforms it first.
+
+### Tilde Expansion
+
+The `~` character is expanded to the value of the `HOME` environment variable (your home directory).
+
+```bash
+echo ~
+# /home/alice
+
+cd ~/projects
+# same as cd /home/alice/projects
+```
+
+`~username` expands to that user's home directory:
+
+```bash
+echo ~root
+# /root
+```
+
+### Brace Expansion
+
+Braces `{}` generate multiple strings. This is not a pattern match — it is a text generation mechanism.
+
+```bash
+echo {a,b,c}
+# a b c
+
+echo file.{txt,md,json}
+# file.txt file.md file.json
+
+mkdir -p project/{src,test,docs}
+# creates project/src, project/test, project/docs
+```
+
+Brace expansion happens before any other expansion, and it does not check whether the resulting files exist. It is purely textual.
+
+Ranges also work:
+
+```bash
+echo {1..5}
+# 1 2 3 4 5
+
+echo {a..f}
+# a b c d e f
+
+echo file{01..05}.txt
+# file01.txt file02.txt file03.txt file04.txt file05.txt
+```
+
+### Globbing (Filename Expansion)
+
+Globbing is pattern matching against existing files. Unlike brace expansion, globbing checks what actually exists on disk.
+
+`*` matches any number of characters (including zero):
+
+```bash
+ls *.txt
+# lists all files ending in .txt in the current directory
+
+ls src/*.js
+# lists all .js files in the src directory
+```
+
+`?` matches exactly one character:
+
+```bash
+ls file?.txt
+# matches file1.txt, fileA.txt, but not file12.txt
+```
+
+`[...]` matches any one character from the set:
+
+```bash
+ls file[123].txt
+# matches file1.txt, file2.txt, file3.txt
+
+ls file[a-z].txt
+# matches filea.txt through filez.txt
+```
+
+If no files match the glob pattern, the behavior depends on the shell. In `bash`, the pattern is passed to the command as a literal string. In `zsh`, it produces an error.
+
+### The Order of Expansion
+
+The shell performs expansions in a specific order:
+
+1. Brace expansion
+2. Tilde expansion
+3. Parameter/variable expansion (`$VAR`)
+4. Command substitution (`$(...)`)
+5. Word splitting
+6. Filename expansion (globbing)
+
+This ordering matters. For example, variable expansion happens before globbing, so this works:
+
+```bash
+pattern="*.txt"
+ls $pattern
+```
+
+The variable `$pattern` is expanded to `*.txt` first, and then `*.txt` is globbed against files on disk.
+
+---
+
+## Background Processes
+
+When you run a command normally, the shell waits for it to finish before giving you the prompt back. The command runs in the **foreground**.
+
+Appending `&` to a command runs it in the **background**. The shell starts the command, prints its process ID (PID) and job number, and immediately gives you the prompt back.
+
+```bash
+sleep 60 &
+# [1] 12345
+```
+
+The `[1]` is the **job number** (used by the shell's job control). `12345` is the **PID** (used by the operating system). The shell is now free. You can type other commands while `sleep 60` runs in the background.
+
+When a background process finishes, the shell prints a notification the next time it displays a prompt:
+
+```bash
+# (after 60 seconds, when you press Enter or run another command)
+[1]  + done       sleep 60
+```
+
+### Practical Use
+
+Background processes are useful when you want to run something long-running without locking up your terminal:
+
+```bash
+npm run build &
+# continues working in the same terminal while the build runs
+
+./run_tests.sh > test_output.log 2>&1 &
+# runs tests in the background, captures all output to a file
+```
+
+---
+
+## Jobs
+
+A **job** is the shell's name for a process (or a group of processes from a pipeline) that the shell is tracking. The shell maintains a **job table** that maps job numbers to the processes it has launched.
+
+### jobs
+
+The `jobs` command lists all jobs the current shell is tracking:
+
+```bash
+sleep 100 &
+sleep 200 &
+jobs
+# [1]  - running    sleep 100
+# [2]  + running    sleep 200
+```
+
+The `+` marks the most recent job (the "current" job). The `-` marks the previous job.
+
+### fg (Foreground)
+
+The `fg` command brings a background job into the foreground, meaning the shell will wait for it to finish:
+
+```bash
+fg %1
+# brings job 1 (sleep 100) to the foreground
+```
+
+Without a job number, `fg` brings the most recent job (the one marked with `+`).
+
+### bg (Background)
+
+The `bg` command resumes a **suspended** job in the background. A job gets suspended when you press `Ctrl+Z` (covered below).
+
+```bash
+# you're running a command in the foreground
+./long_task.sh
+# press Ctrl+Z
+# [1]  + suspended  ./long_task.sh
+
+bg %1
+# [1]  - continued  ./long_task.sh
+# the task is now running in the background
+```
+
+### Processes vs Jobs
+
+This distinction is important.
+
+A **process** is an operating system concept. Every running program has a PID assigned by the kernel. The kernel manages processes. You can see them with `ps` or `top`. Every process on the entire system has a PID.
+
+A **job** is a shell concept. Only the shell that launched a command knows about it as a job. Jobs have job numbers (`%1`, `%2`, etc.) that are local to that particular shell session. If you open a second terminal, it has its own independent job table.
+
+The `kill` command works with PIDs (operating system level):
+
+```bash
+kill 12345
+```
+
+The `fg` and `bg` commands work with job numbers (shell level):
+
+```bash
+fg %1
+```
+
+You can also use `kill` with job numbers:
+
+```bash
+kill %1
+```
+
+The shell translates the job number to the underlying PID.
+
+---
+
+## Signals
+
+A signal is a software notification sent to a process by the operating system. Signals are how processes are told about events: "please terminate," "you've been interrupted," "your terminal hung up," and so on.
+
+Each signal has a number and a name. The most important signals for everyday use are:
+
+### SIGINT (Signal 2)
+
+**Interrupt.** Sent when you press `Ctrl+C`. This politely asks a process to stop what it is doing. Most programs handle SIGINT by cleaning up and exiting. But a program can choose to ignore it or handle it differently.
+
+```bash
+# running a long process
+find / -name "*.log"
+# press Ctrl+C
+# the process receives SIGINT and terminates
+```
+
+### SIGTERM (Signal 15)
+
+**Terminate.** This is the default signal sent by the `kill` command. Like SIGINT, it is a polite request to terminate. The process can catch it, perform cleanup (close files, save state, release resources), and then exit gracefully. This is the signal you should try first when you want to stop a process.
+
+```bash
+kill 12345
+# sends SIGTERM to process 12345
+# equivalent to:
+kill -15 12345
+```
+
+### SIGKILL (Signal 9)
+
+**Kill.** This is the forceful, unconditional termination signal. The process **cannot** catch, block, or ignore SIGKILL. The kernel immediately destroys the process. The process gets no chance to clean up.
+
+```bash
+kill -9 12345
+```
+
+Use SIGKILL only as a last resort, when a process is not responding to SIGTERM. Killing a process with SIGKILL can leave behind temporary files, corrupt databases, or leave shared resources in an inconsistent state because the process had no chance to clean up.
+
+### SIGTSTP (Signal 20)
+
+**Terminal stop.** Sent when you press `Ctrl+Z`. This **suspends** (pauses) the process. The process is not terminated. It is frozen in place. You can resume it later with `fg` (foreground) or `bg` (background).
+
+### SIGHUP (Signal 1)
+
+**Hangup.** Originally sent when a terminal was disconnected (the modem "hung up"). Today it is sent when you close a terminal window. Processes running in that terminal receive SIGHUP and typically exit. The `nohup` command makes a process immune to SIGHUP, allowing it to keep running after you close the terminal.
+
+### Sending Signals with kill
+
+Despite its name, `kill` does not necessarily kill a process. It sends a signal. You specify which signal with a flag:
+
+```bash
+kill 12345        # SIGTERM (default)
+kill -2 12345     # SIGINT
+kill -9 12345     # SIGKILL
+kill -15 12345    # SIGTERM (explicit)
+kill -STOP 12345  # SIGSTOP (pause the process)
+kill -CONT 12345  # SIGCONT (resume a paused process)
+```
+
+To send a signal to all processes with a given name:
+
+```bash
+killall node      # sends SIGTERM to all processes named "node"
+pkill -f "npm run dev"  # sends SIGTERM to processes matching the pattern
+```
+
+---
+
+## Keyboard Shortcuts
+
+These keyboard shortcuts interact with the shell and the foreground process through signals and special characters.
+
+### Ctrl+C
+
+Sends **SIGINT** to the foreground process. This interrupts and typically terminates the running command. The shell itself is not affected. After the process dies, you get your prompt back.
+
+```bash
+ping google.com
+# (continuous output)
+# press Ctrl+C
+# ping stops, you get your prompt back
+```
+
+### Ctrl+Z
+
+Sends **SIGTSTP** to the foreground process. This **suspends** the process. It does not terminate it. The process is frozen and moved out of the foreground. You can resume it with `fg` or `bg`.
+
+```bash
+vim largefile.txt
+# press Ctrl+Z
+# [1]  + suspended  vim largefile.txt
+# you're back at the shell prompt, vim is paused
+fg
+# vim comes back exactly where you left off
+```
+
+### Ctrl+D
+
+This does not send a signal. It sends an **EOF** (End of File) character to the process reading from stdin. When the shell itself receives EOF, it exits (same as typing `exit`).
+
+```bash
+cat
+# type some lines
+# press Ctrl+D
+# cat sees EOF and stops reading
+```
+
+If your shell exits when you press `Ctrl+D`, that is because the shell was reading commands from stdin and it received EOF, which it interprets as "no more input, time to exit."
+
+### Key Differences
+
+- `Ctrl+C` means "interrupt and terminate the process"
+- `Ctrl+Z` means "pause the process, I'll come back to it"
+- `Ctrl+D` means "I'm done providing input"
+
+---
+
+## The type Command
+
+The `type` command tells you **how the shell would interpret a command name**. It reveals whether something is a built-in, an alias, a function, or an external program.
+
+```bash
+type cd
+# cd is a shell builtin
+
+type ls
+# ls is /bin/ls
+
+type ll
+# ll is an alias for ls -la
+
+type type
+# type is a shell builtin
+```
+
+### How type Differs from which and whereis
+
+`which` only finds external executables by searching `PATH`. It does not know about builtins, aliases, or functions:
+
+```bash
+which cd
+# (no output, or an incorrect path)
+
+type cd
+# cd is a shell builtin
+```
+
+`whereis` is broader — it finds the binary, source files, and man pages for a command. But like `which`, it does not understand shell builtins or aliases:
+
+```bash
+whereis python
+# python: /usr/bin/python /usr/lib/python3.10 /usr/share/man/man1/python.1.gz
+```
+
+Use `type` when you want to know "what will the shell actually do when I type this command?" Use `which` when you specifically want the filesystem path of an executable. Use `whereis` when you also want to find source and documentation files.
+
+---
+
+## /dev/null
+
+`/dev/null` is a special file that discards everything written to it and returns nothing when read from. It is a black hole for data.
+
+Every operating system has a concept of "throw this away." On Unix, that concept is a file. This follows the Unix philosophy that everything is a file.
+
+Writing to `/dev/null`:
+
+```bash
+echo "this vanishes" > /dev/null
+```
+
+The text is sent to `/dev/null` and disappears. Nothing is stored, no disk space is used.
+
+Reading from `/dev/null`:
+
+```bash
+cat /dev/null
+# (no output — it immediately returns EOF)
+```
+
+### Practical Uses
+
+Suppressing error output you do not care about:
+
+```bash
+find / -name "*.conf" 2>/dev/null
+```
+
+The `find` command searches the entire filesystem. It produces "Permission denied" errors for directories you cannot read. Sending stderr to `/dev/null` hides those errors while still showing the actual results on stdout.
+
+Suppressing all output (you only care about the exit code):
+
+```bash
+grep -q "pattern" file.txt > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo "Pattern found"
+fi
+```
+
+Discarding stdin (providing empty input to a command):
+
+```bash
+command < /dev/null
+```
+
+This gives the command an immediate EOF on stdin, so it does not wait for input.

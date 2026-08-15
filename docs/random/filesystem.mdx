@@ -1,0 +1,522 @@
+---
+title: Filesystem
+description: The Linux directory hierarchy, paths, links, inodes, umask, mount points, and how files actually work under the hood
+---
+
+## The Directory Hierarchy
+
+Every Unix-like operating system organizes files into a single tree structure that starts at the root, denoted by `/`. There are no drive letters like `C:\` or `D:\`. Everything, including external drives, network shares, and virtual filesystems, attaches somewhere within this one tree.
+
+The root `/` is the top-level directory. Every path on the system starts from here.
+
+```
+/
+├── bin
+├── boot
+├── dev
+├── etc
+├── home
+├── lib
+├── media
+├── mnt
+├── opt
+├── proc
+├── root
+├── run
+├── sbin
+├── srv
+├── sys
+├── tmp
+├── usr
+└── var
+```
+
+### /home
+
+Home directories for regular users. Each user gets a directory named after their username.
+
+```
+/home/alice
+/home/bob
+```
+
+Your personal files, configuration files, shell history, SSH keys, and downloaded content all live here. The `~` shortcut always points to your home directory (`/home/alice` for user `alice`).
+
+On macOS, home directories are at `/Users/` instead of `/home/`.
+
+### /etc
+
+System-wide configuration files. The name historically comes from "et cetera." Every service, application, and system component stores its configuration here.
+
+```
+/etc/ssh/sshd_config    # SSH server configuration
+/etc/nginx/nginx.conf   # Nginx web server config
+/etc/hosts              # hostname-to-IP mappings
+/etc/passwd             # user account information
+/etc/environment        # system-wide environment variables
+```
+
+If you need to configure how a system service behaves, the configuration file is almost certainly in `/etc`.
+
+### /usr
+
+Programs and data available to all users. This is where most installed software lives. The name historically stood for "Unix System Resources."
+
+```
+/usr/bin      # user commands (most programs you run)
+/usr/sbin     # system administration commands
+/usr/lib      # libraries for /usr/bin and /usr/sbin
+/usr/local    # locally installed software (compiled from source, or installed manually)
+/usr/share    # architecture-independent data (man pages, documentation)
+```
+
+When you install software through a package manager (`apt`, `yum`, `brew`), the binaries typically end up in `/usr/bin`.
+
+### /var
+
+Variable data. Files that change frequently during normal system operation.
+
+```
+/var/log      # log files (syslog, auth.log, nginx access logs)
+/var/tmp      # temporary files that survive reboots
+/var/cache    # cached data from applications
+/var/mail     # user mail
+/var/run      # runtime data (PID files, sockets) — often symlinked to /run
+```
+
+When debugging a server issue, `/var/log` is usually the first place to look.
+
+### /tmp
+
+Temporary files. Any user can write here. The system typically clears `/tmp` on reboot. Do not store anything important here.
+
+Programs use `/tmp` for scratch data that they only need while they are running.
+
+### /dev
+
+Device files. In Unix, hardware devices are represented as files. This is the "everything is a file" philosophy in action.
+
+```
+/dev/sda      # first hard drive
+/dev/sda1     # first partition of the first hard drive
+/dev/null     # black hole (discards all data)
+/dev/zero     # infinite stream of zero bytes
+/dev/random   # random number generator
+/dev/tty      # the current terminal
+```
+
+You do not interact with most of these directly, but they are how the kernel exposes hardware to programs. When a program reads from `/dev/random`, it gets random data. When it writes to `/dev/null`, the data vanishes.
+
+### /proc
+
+A virtual filesystem that does not exist on disk. The kernel generates its contents on the fly. It provides information about running processes and system state.
+
+```
+/proc/1         # information about process with PID 1
+/proc/cpuinfo   # CPU details
+/proc/meminfo   # memory usage details
+/proc/uptime    # system uptime in seconds
+/proc/self      # symlink to the current process's own entry
+```
+
+Each numbered directory corresponds to a running process. `/proc/1234/status` gives you information about process 1234. Tools like `ps` and `top` read their data from `/proc`.
+
+### /root
+
+Home directory for the root user (the system administrator account). Not to be confused with `/` (the root of the filesystem). Regular users cannot access this directory.
+
+### /boot
+
+Files needed to boot the system: the kernel image, the bootloader configuration, and the initial RAM disk. You rarely need to touch this.
+
+### /opt
+
+Optional software. Large third-party applications that do not fit neatly into the `/usr` hierarchy sometimes install here.
+
+```
+/opt/google/chrome
+/opt/jetbrains/idea
+```
+
+### /srv
+
+Data served by the system. A web server might store website files in `/srv/www`. In practice, many administrators use `/var/www` instead.
+
+---
+
+## Absolute vs Relative Paths
+
+An **absolute path** starts from the root `/` and specifies the full location of a file or directory in the tree.
+
+```
+/home/alice/projects/app/src/index.js
+```
+
+This path is unambiguous. It points to exactly one location regardless of where you currently are in the filesystem.
+
+A **relative path** is interpreted relative to your current working directory. It does not start with `/`.
+
+```
+src/index.js
+```
+
+If your current directory is `/home/alice/projects/app`, then `src/index.js` refers to `/home/alice/projects/app/src/index.js`. If your current directory is different, the same relative path points to a different location.
+
+### Special Directory References
+
+`~` is your home directory:
+
+```bash
+cd ~
+# same as cd /home/alice
+```
+
+`.` (single dot) is the current directory:
+
+```bash
+ls .
+# lists the current directory (same as plain ls)
+
+./script.sh
+# runs script.sh from the current directory
+```
+
+`..` (double dot) is the parent directory:
+
+```bash
+cd ..
+# go up one level
+
+ls ../../
+# list contents two levels up
+
+cat ../config.json
+# read a file in the parent directory
+```
+
+These can be combined:
+
+```bash
+cd ~/projects/../documents
+# goes to /home/alice/documents
+# (projects/.. cancels out to just /home/alice)
+```
+
+---
+
+## Symbolic Links (Symlinks)
+
+A symbolic link (also called a soft link or symlink) is a special file that points to another file or directory by its path. It is similar to a shortcut on Windows.
+
+Creating a symlink:
+
+```bash
+ln -s /path/to/original /path/to/link
+```
+
+The `-s` flag means "symbolic." Without it, `ln` creates a hard link (covered below).
+
+```bash
+ln -s /usr/bin/python3 /usr/local/bin/python
+```
+
+Now `/usr/local/bin/python` is a symlink that points to `/usr/bin/python3`. When you access the symlink, the system follows the pointer and gives you the original file.
+
+### How Symlinks Work
+
+A symlink stores a **path string** as its data. When the operating system encounters a symlink, it reads the stored path and redirects to that location. The symlink itself is a separate file with its own inode, but its content is just a path.
+
+```bash
+ls -la /usr/local/bin/python
+# lrwxrwxrwx 1 root root 18 Jan 1 /usr/local/bin/python -> /usr/bin/python3
+```
+
+The `l` at the beginning of the permission string indicates a symbolic link. The `->` shows where it points.
+
+### Dangling Symlinks
+
+If the original file is deleted, the symlink still exists but points to nothing. This is called a **dangling symlink**.
+
+```bash
+ln -s /tmp/data.txt link_to_data
+rm /tmp/data.txt
+cat link_to_data
+# cat: link_to_data: No such file or directory
+```
+
+The symlink is still there, but the target is gone. The symlink does not prevent the original file from being deleted.
+
+### Use Cases for Symlinks
+
+- Providing a short, convenient name for a deeply nested path
+- Switching between versions of software (pointing `python` to `python3.10` or `python3.11`)
+- Making a file appear in multiple locations without duplicating data
+- System-level configuration (many entries in `/etc` are symlinks to files in other locations)
+
+---
+
+## Hard Links
+
+A hard link is a different kind of link that works at a more fundamental level. To understand hard links, you need to understand inodes.
+
+### What is an Inode
+
+Every file on a Unix filesystem has an **inode** (index node). An inode is a data structure stored by the filesystem that contains all the metadata about a file:
+
+- File size
+- Owner (user ID)
+- Group (group ID)
+- Permissions
+- Timestamps (created, modified, accessed)
+- Pointers to the actual data blocks on disk
+- Number of hard links pointing to this inode
+
+Crucially, the inode does **not** contain the filename. The filename is stored in the directory that contains the file.
+
+A directory is essentially a list of name-to-inode mappings. When you create a file called `report.txt`, the directory stores: "the name `report.txt` maps to inode 48273." When you read `report.txt`, the filesystem looks up the inode number in the directory, then reads the metadata and data from inode 48273.
+
+You can see inode numbers with `ls -i`:
+
+```bash
+ls -i report.txt
+# 48273 report.txt
+```
+
+### How Hard Links Work
+
+A hard link is simply another directory entry that points to the same inode. The file's data exists once on disk, but two (or more) filenames point to it.
+
+```bash
+echo "important data" > original.txt
+ln original.txt hardlink.txt
+```
+
+Now both `original.txt` and `hardlink.txt` point to the same inode. They are indistinguishable. Neither one is "the original" — they are equal references to the same underlying file.
+
+```bash
+ls -li original.txt hardlink.txt
+# 48273 -rw-r--r-- 2 alice staff 15 Jan 1 10:00 hardlink.txt
+# 48273 -rw-r--r-- 2 alice staff 15 Jan 1 10:00 original.txt
+```
+
+Notice:
+- Same inode number (48273)
+- The hard link count is `2` (two names point to this inode)
+- Same size, same permissions, same timestamps
+
+If you edit the file through either name, the change appears in both because they are the same file.
+
+If you delete one of the names, the other still works. The file's data is only deleted when the last hard link is removed (when the hard link count drops to zero).
+
+```bash
+rm original.txt
+cat hardlink.txt
+# important data
+```
+
+The data survives because `hardlink.txt` still points to the inode.
+
+### Hard Links vs Symlinks
+
+Hard links point to an **inode** (the actual data). Symlinks point to a **path** (a name).
+
+If the original file is deleted:
+- A hard link still works (the data still exists because the inode has another reference)
+- A symlink breaks (the path it points to no longer exists)
+
+Hard links cannot cross filesystem boundaries. A hard link in `/home` cannot point to an inode on a different partition mounted at `/data`, because inodes are local to a filesystem. Symlinks can cross filesystem boundaries because they store a path, not an inode reference.
+
+Hard links cannot point to directories (to prevent cycles in the filesystem tree). Symlinks can point to directories.
+
+---
+
+## Hidden Files
+
+In Unix, a file whose name starts with a dot (`.`) is treated as a **hidden file**. The `ls` command does not show it by default. You need `ls -a` to see hidden files.
+
+```bash
+ls
+# Documents  Downloads  Projects
+
+ls -a
+# .  ..  .bashrc  .ssh  .gitconfig  Documents  Downloads  Projects
+```
+
+The `.` and `..` entries are always present (current directory and parent directory).
+
+Hidden files are used for configuration. Your shell configuration (`.bashrc`, `.zshrc`), Git configuration (`.gitconfig`), SSH keys (`.ssh/`), and many other user-specific settings are stored in hidden files and directories in your home directory.
+
+There is nothing magical about the dot convention. The filesystem does not have a "hidden" attribute. It is simply a convention honored by `ls` and file managers. Any program can read hidden files normally.
+
+```bash
+cat ~/.bashrc
+# works the same as any other file
+```
+
+---
+
+## The Executable Bit
+
+The execute permission (`x`) on a file determines whether it can be run as a program. This is separate from the file's contents. A file can contain valid program code but still not be executable if the `x` bit is not set.
+
+```bash
+echo '#!/bin/bash
+echo "hello"' > script.sh
+
+./script.sh
+# zsh: permission denied: ./script.sh
+
+chmod +x script.sh
+./script.sh
+# hello
+```
+
+Without the execute bit, the kernel refuses to run the file even though it contains valid bash code.
+
+### The ./ Prefix
+
+When you type `./script.sh`, the `./` is necessary because the current directory is typically not in your `PATH`. If you type just `script.sh`, the shell searches `PATH` for it and does not find it (unless `.` is in your `PATH`, which is discouraged for security reasons).
+
+The `./` is not special syntax. It is a relative path meaning "the file called `script.sh` in the current directory." It bypasses the `PATH` search entirely because it is a path, not a bare command name.
+
+### The Shebang Line
+
+The first line of a script starting with `#!` is called the **shebang** (or hashbang). It tells the kernel which interpreter to use to run the file.
+
+```bash
+#!/bin/bash
+echo "This runs with bash"
+```
+
+```python
+#!/usr/bin/env python3
+print("This runs with python3")
+```
+
+When you execute `./script.sh`, the kernel reads the first two bytes of the file. If they are `#!`, the kernel reads the rest of that line as the path to an interpreter and runs that interpreter with the script file as its argument. So `./script.sh` effectively becomes `/bin/bash ./script.sh`.
+
+The `#!/usr/bin/env python3` form is preferred over `#!/usr/bin/python3` because `env` searches `PATH` for `python3`, making the script work regardless of where Python is installed.
+
+---
+
+## umask
+
+`umask` controls the **default permissions** assigned to newly created files and directories. When a program creates a file, it requests a set of permissions (usually 666 for files and 777 for directories). The umask is then **subtracted** from those requested permissions to produce the actual permissions.
+
+The umask is a three-digit octal number, just like chmod permissions. But instead of specifying what to grant, it specifies what to **remove**.
+
+### How the Calculation Works
+
+The default permission for a new file is 666 (rw-rw-rw-). The default for a new directory is 777 (rwxrwxrwx).
+
+With a umask of 022:
+
+```
+File:      666 - 022 = 644 (rw-r--r--)
+Directory: 777 - 022 = 755 (rwxr-xr-x)
+```
+
+This means new files are readable by everyone but writable only by the owner. New directories are accessible by everyone but only the owner can create or delete files inside them. This is the most common default umask.
+
+With a umask of 077:
+
+```
+File:      666 - 077 = 600 (rw-------)
+Directory: 777 - 077 = 700 (rwx------)
+```
+
+This is more restrictive. New files and directories are accessible only by the owner.
+
+### Viewing and Setting umask
+
+```bash
+umask
+# 022
+
+umask 077
+# sets a more restrictive umask for this shell session
+```
+
+The umask applies to the current shell session and is inherited by child processes. To make it permanent, set it in your shell configuration file (`~/.bashrc` or `~/.zshrc`).
+
+### A Subtlety in the Subtraction
+
+The umask operation is not literally arithmetic subtraction. It is a **bitwise AND with the complement**. In practice, the difference only matters in edge cases. For example, umask 033 applied to file default 666:
+
+Arithmetic subtraction would give 633, but the actual result is 644. This is because umask removes bits that are set in the umask. The write bit (2) is already not present in the "others" digit (6 = rw- = 110 in binary), so removing the execute bit (1) from it has no effect. The result is: user gets rw- (6), group gets r-- (4), others gets r-- (4).
+
+For the common umask values (022 and 077), the arithmetic shortcut gives the correct answer.
+
+---
+
+## Mount Points
+
+In Unix, there is no concept of separate drive letters. All storage devices, whether internal drives, USB sticks, network shares, or virtual filesystems, are attached to the single directory tree at a specific location called a **mount point**.
+
+Mounting is the process of making a filesystem accessible by attaching it to a directory in the tree.
+
+### How Mounting Works
+
+Suppose you have two storage devices:
+- Your main hard drive, which contains the root filesystem
+- A USB drive, which has its own filesystem with files on it
+
+When you plug in the USB drive, the operating system can mount it at a directory, say `/mnt/usb`:
+
+```bash
+sudo mount /dev/sdb1 /mnt/usb
+```
+
+After this command, accessing `/mnt/usb` shows the contents of the USB drive. The directory `/mnt/usb` existed before (it was just an empty directory), but now it is a "portal" into the USB drive's filesystem.
+
+```bash
+ls /mnt/usb
+# photos  documents  music
+```
+
+These files are physically on the USB drive, but they appear as part of the same directory tree.
+
+To detach the USB drive:
+
+```bash
+sudo umount /mnt/usb
+```
+
+After unmounting, `/mnt/usb` is an empty directory again. The USB drive's files are no longer accessible.
+
+### Viewing Current Mounts
+
+The `mount` command without arguments lists all currently mounted filesystems:
+
+```bash
+mount
+# /dev/sda1 on / type ext4 (rw,relatime)
+# /dev/sdb1 on /mnt/usb type vfat (rw,relatime)
+# tmpfs on /tmp type tmpfs (rw,nosuid)
+# proc on /proc type proc (rw,nosuid,nodev,noexec)
+```
+
+The `df` command shows mounted filesystems with disk space usage:
+
+```bash
+df -h
+# Filesystem      Size  Used Avail Use% Mounted on
+# /dev/sda1       100G   45G   55G  45% /
+# /dev/sdb1        16G    8G    8G  50% /mnt/usb
+# tmpfs           2.0G     0  2.0G   0% /tmp
+```
+
+### Virtual Filesystems
+
+Not all mounted filesystems correspond to physical storage. `/proc` is a virtual filesystem generated by the kernel. `/tmp` might be a `tmpfs` filesystem that lives entirely in RAM. These are mounted just like disk-based filesystems, but they do not persist to disk (or in the case of `/proc`, they are generated on demand by the kernel).
+
+### The /etc/fstab File
+
+The file `/etc/fstab` (filesystem table) defines which filesystems should be automatically mounted at boot. Each line specifies a device, a mount point, a filesystem type, and options.
+
+```
+/dev/sda1  /      ext4  defaults  0  1
+/dev/sda2  /home  ext4  defaults  0  2
+```
+
+This tells the system to mount `/dev/sda1` as the root filesystem and `/dev/sda2` at `/home` during boot.

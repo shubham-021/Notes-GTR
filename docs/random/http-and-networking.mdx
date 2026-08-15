@@ -1,0 +1,664 @@
+---
+title: HTTP and Networking
+description: The HTTP protocol from request to response, status codes, cookies, caching, HTTPS, HTTP versions, and essential networking commands
+---
+
+## What is HTTP
+
+HTTP (HyperText Transfer Protocol) is the protocol that powers the web. Every time a browser loads a page, a mobile app fetches data, or your backend calls an external API, HTTP is the underlying communication mechanism.
+
+HTTP is a **request-response** protocol. A client sends a request to a server. The server processes it and sends back a response. That is one complete HTTP transaction. The client always initiates; the server only responds.
+
+HTTP is **stateless**. Each request is independent. The server does not remember anything about previous requests from the same client. Every request must contain all the information the server needs to process it. Mechanisms like cookies and sessions are built on top of HTTP to work around this statelessness.
+
+---
+
+## The HTTP Request
+
+An HTTP request has four parts: the **request line**, **headers**, an empty line, and an optional **body**.
+
+```
+GET /api/users HTTP/1.1
+Host: api.example.com
+Accept: application/json
+Authorization: Bearer eyJhbGciOiJIUzI...
+```
+
+### The Request Line
+
+```
+GET /api/users HTTP/1.1
+```
+
+This contains three things:
+
+**Method**: What operation to perform. The most common methods:
+
+- **GET** retrieves data. It should not modify anything on the server. Loading a webpage, fetching API data, downloading a file.
+- **POST** sends data to the server to create a resource. Submitting a form, creating a user, uploading a file.
+- **PUT** replaces an existing resource entirely with the provided data.
+- **PATCH** partially updates an existing resource. Only the fields included in the request are changed.
+- **DELETE** removes a resource.
+- **HEAD** is identical to GET but returns only headers, no body. Useful for checking if a resource exists or getting its size without downloading it.
+- **OPTIONS** asks the server what methods and headers it supports. Used by browsers for CORS preflight requests.
+
+**Path**: The resource being requested (`/api/users`). This is the URL path without the domain.
+
+**HTTP version**: Which version of the protocol to use (`HTTP/1.1`).
+
+### Request Headers
+
+Headers are key-value pairs that provide metadata about the request. They appear one per line, in the format `Name: value`.
+
+```
+Host: api.example.com
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer eyJhbGciOiJIUzI...
+User-Agent: Mozilla/5.0
+Cookie: session_id=abc123
+Cache-Control: no-cache
+```
+
+Common request headers:
+
+- **Host**: The domain name of the server. Required in HTTP/1.1 because multiple websites can share the same IP address.
+- **Content-Type**: The format of the request body. `application/json` for JSON, `application/x-www-form-urlencoded` for form data, `multipart/form-data` for file uploads.
+- **Accept**: What response formats the client can handle. The server uses this to decide how to format the response.
+- **Authorization**: Credentials for authentication. Usually a Bearer token or Basic auth.
+- **User-Agent**: Identifies the client software (browser name and version, or your application name).
+- **Cookie**: Sends stored cookies back to the server.
+
+### Request Body
+
+GET and DELETE requests typically have no body. POST, PUT, and PATCH requests include a body with the data being sent.
+
+```
+POST /api/users HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+
+{"name": "Alice", "email": "alice@example.com"}
+```
+
+The empty line between headers and body is required. It tells the parser that headers are done and the body starts.
+
+---
+
+## The HTTP Response
+
+An HTTP response also has four parts: the **status line**, **headers**, an empty line, and an optional **body**.
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 82
+Set-Cookie: session_id=abc123; Path=/; HttpOnly
+
+{"id": 1, "name": "Alice", "email": "alice@example.com"}
+```
+
+### The Status Line
+
+```
+HTTP/1.1 200 OK
+```
+
+This contains the HTTP version, a **status code** (a three-digit number), and a **reason phrase** (human-readable text).
+
+---
+
+## Status Codes
+
+Status codes are grouped by their first digit:
+
+### 1xx — Informational
+
+The request was received and is being processed. You rarely see these directly.
+
+- **100 Continue**: The server received the request headers and the client should proceed to send the body.
+- **101 Switching Protocols**: The server is switching to a different protocol (used in WebSocket handshakes).
+
+### 2xx — Success
+
+The request was successfully received, understood, and accepted.
+
+- **200 OK**: The standard success response. For GET, the resource is in the body. For POST, the result of the action is in the body.
+- **201 Created**: A new resource was successfully created. The `Location` header usually contains the URL of the new resource.
+- **204 No Content**: Success, but there is no response body. Common for DELETE responses.
+
+### 3xx — Redirection
+
+The client needs to take additional action to complete the request.
+
+- **301 Moved Permanently**: The resource has permanently moved to a new URL. Browsers and search engines update their records.
+- **302 Found**: The resource is temporarily at a different URL. The client should continue using the original URL for future requests.
+- **304 Not Modified**: The resource has not changed since the client last fetched it. The client should use its cached version. This saves bandwidth.
+
+### 4xx — Client Error
+
+The request contains an error and cannot be fulfilled.
+
+- **400 Bad Request**: The request is malformed or invalid. Missing required fields, wrong data types, invalid JSON.
+- **401 Unauthorized**: Authentication is required but was not provided, or the provided credentials are invalid. Despite the name, this is about **authentication** (who are you), not authorization (what can you do).
+- **403 Forbidden**: The server understood the request but refuses to authorize it. The client is authenticated but does not have permission. This is about **authorization**.
+- **404 Not Found**: The requested resource does not exist.
+- **405 Method Not Allowed**: The HTTP method is not supported for this resource. For example, trying to DELETE a read-only resource.
+- **409 Conflict**: The request conflicts with the current state of the server. For example, trying to create a user with an email that already exists.
+- **422 Unprocessable Entity**: The request is well-formed but semantically invalid. For example, an age field set to -5.
+- **429 Too Many Requests**: Rate limiting. The client has sent too many requests in a given time period.
+
+### 5xx — Server Error
+
+The server failed to fulfill a valid request.
+
+- **500 Internal Server Error**: A generic server-side error. Something went wrong but the server does not have a more specific error to report.
+- **502 Bad Gateway**: The server, acting as a gateway or proxy, received an invalid response from an upstream server.
+- **503 Service Unavailable**: The server is temporarily unable to handle the request. Usually due to overload or maintenance.
+- **504 Gateway Timeout**: The server, acting as a gateway, did not receive a response from the upstream server in time.
+
+---
+
+## Response Headers
+
+Common response headers:
+
+- **Content-Type**: The format of the response body (`application/json`, `text/html`, `image/png`).
+- **Content-Length**: The size of the response body in bytes.
+- **Set-Cookie**: Tells the client to store a cookie.
+- **Cache-Control**: Directives for how the response should be cached.
+- **Location**: The URL to redirect to (used with 3xx status codes).
+- **Access-Control-Allow-Origin**: CORS header specifying which origins can access the resource.
+
+---
+
+## Cookies
+
+A cookie is a small piece of data that the server sends to the client, and the client sends back to the server with every subsequent request. Cookies are the primary mechanism for maintaining state in HTTP.
+
+### How Cookies Work
+
+1. The client sends a request (for example, a login request with username and password)
+2. The server validates the credentials and sends a response with a `Set-Cookie` header:
+
+```
+HTTP/1.1 200 OK
+Set-Cookie: session_id=abc123; Path=/; HttpOnly; Secure; Max-Age=86400
+```
+
+3. The client stores the cookie
+4. On every subsequent request to the same domain, the client automatically includes the cookie:
+
+```
+GET /api/profile HTTP/1.1
+Cookie: session_id=abc123
+```
+
+The server reads the cookie value to identify the client.
+
+### Cookie Attributes
+
+- **Path**: Which URL paths the cookie should be sent for. `Path=/` means all paths.
+- **Domain**: Which domain the cookie belongs to.
+- **Max-Age**: How long the cookie lasts, in seconds. After this, the client deletes it. Without Max-Age or Expires, the cookie is a session cookie and is deleted when the browser closes.
+- **HttpOnly**: The cookie cannot be accessed by JavaScript (`document.cookie`). This prevents cross-site scripting (XSS) attacks from stealing session cookies.
+- **Secure**: The cookie is only sent over HTTPS connections.
+- **SameSite**: Controls whether the cookie is sent with cross-site requests. `Strict` means never, `Lax` means only for top-level navigations, `None` means always (requires `Secure`).
+
+---
+
+## Sessions
+
+HTTP is stateless, but most applications need to remember who a user is across multiple requests. Sessions solve this.
+
+A **session** is server-side state associated with a client. The server creates a session when a user logs in, assigns it a unique identifier (the session ID), and stores data about the user (their user ID, permissions, preferences) on the server.
+
+The session ID is sent to the client as a cookie. On each request, the client sends the session ID back, and the server uses it to look up the associated data.
+
+```
+Client                          Server
+  |                               |
+  |-- POST /login (credentials)-->|
+  |                               | creates session, stores user data
+  |<-- 200 OK + Set-Cookie -------|
+  |    session_id=abc123          |
+  |                               |
+  |-- GET /profile ------------->|
+  |   Cookie: session_id=abc123   |
+  |                               | looks up session abc123, finds user data
+  |<-- 200 OK + user profile -----|
+```
+
+The session data (user information, permissions) lives on the server, not in the cookie. The cookie only contains the session ID, which is a lookup key.
+
+---
+
+## HTTP Caching
+
+Caching avoids re-transferring data that has not changed. It reduces latency and server load.
+
+### Cache-Control Header
+
+The server tells the client how to cache a response:
+
+```
+Cache-Control: max-age=3600
+```
+
+This means the client can reuse this response for 3600 seconds (1 hour) without asking the server again.
+
+```
+Cache-Control: no-cache
+```
+
+The client must check with the server before using a cached response (the server may respond with 304 Not Modified).
+
+```
+Cache-Control: no-store
+```
+
+The response must not be cached at all. Used for sensitive data.
+
+```
+Cache-Control: public, max-age=31536000
+```
+
+Anyone (including CDNs and proxies) can cache this for one year. Used for static assets like images and CSS files that have versioned URLs.
+
+### ETags
+
+An **ETag** (Entity Tag) is a fingerprint of a resource. The server includes it in the response:
+
+```
+HTTP/1.1 200 OK
+ETag: "abc123"
+Content-Type: application/json
+
+{"data": "..."}
+```
+
+On subsequent requests, the client sends the ETag back:
+
+```
+GET /api/data HTTP/1.1
+If-None-Match: "abc123"
+```
+
+If the resource has not changed, the server responds with:
+
+```
+HTTP/1.1 304 Not Modified
+```
+
+No body is sent. The client uses its cached version. This saves bandwidth even though the client still makes a request.
+
+---
+
+## Keep-Alive
+
+In HTTP/1.0, every request required a new TCP connection: open, send request, receive response, close. Opening a TCP connection is expensive (it requires a three-way handshake), so this was wasteful.
+
+HTTP/1.1 introduced **persistent connections** (keep-alive). The TCP connection stays open after a response, allowing multiple requests and responses to flow over the same connection:
+
+```
+Connection: keep-alive
+```
+
+This is the default in HTTP/1.1. You do not need to set it explicitly. The connection remains open until either side closes it or a timeout is reached.
+
+---
+
+## HTTP Versions
+
+### HTTP/1.1
+
+The most widely deployed version. Features:
+- Persistent connections (keep-alive) by default
+- Chunked transfer encoding (sending data in chunks without knowing the total size)
+- Host header (allows multiple websites on one IP address)
+
+Limitation: **head-of-line blocking**. On a single connection, requests must be processed in order. If the first request is slow, all subsequent requests wait. Browsers work around this by opening multiple connections to the same server (typically 6).
+
+### HTTP/2
+
+Introduced major performance improvements:
+- **Multiplexing**: Multiple requests and responses can be in flight simultaneously on the same connection. No head-of-line blocking at the HTTP level.
+- **Header compression** (HPACK): Headers are compressed, reducing overhead for repeated headers.
+- **Server push**: The server can proactively send resources it thinks the client will need, before the client requests them.
+- **Binary framing**: Data is transmitted in binary frames instead of text, which is more efficient to parse.
+
+HTTP/2 does not change the semantics of HTTP. The methods, status codes, and headers are the same. The improvement is in how data is transported over the wire.
+
+### HTTP/3
+
+The newest version, standardized in 2022. Uses **QUIC** instead of TCP as the transport protocol.
+
+- **Built on UDP**: QUIC runs over UDP, avoiding TCP's head-of-line blocking at the transport layer. In HTTP/2 over TCP, a single lost packet blocks all streams on that connection. In HTTP/3, only the affected stream is blocked.
+- **Faster connection setup**: QUIC combines the transport handshake and the TLS handshake into a single round trip, reducing connection establishment time.
+- **Connection migration**: If your IP address changes (switching from Wi-Fi to cellular), the QUIC connection can continue without re-establishing. TCP connections break on IP change.
+
+---
+
+## HTTPS
+
+HTTPS is HTTP over TLS (Transport Layer Security). It encrypts the communication between client and server, preventing eavesdropping and tampering.
+
+### What HTTPS Provides
+
+- **Encryption**: The data exchanged between client and server is encrypted. An attacker monitoring the network sees encrypted data, not the actual request and response contents.
+- **Authentication**: The server presents a certificate that proves it is who it claims to be. This prevents man-in-the-middle attacks where an attacker impersonates the server.
+- **Integrity**: The data cannot be modified in transit without detection.
+
+### How TLS Works (Simplified)
+
+1. The client connects to the server and says "I want to use TLS"
+2. The server sends its **TLS certificate**, which contains the server's public key and is signed by a trusted Certificate Authority (CA)
+3. The client verifies the certificate is valid and trusted
+4. The client and server perform a **key exchange** to agree on a shared encryption key
+5. All subsequent data is encrypted with that shared key
+
+This process is called the **TLS handshake**. It adds a round trip to connection establishment, but once complete, data flows with minimal additional overhead.
+
+### In Practice
+
+Every website should use HTTPS. Browsers mark HTTP sites as "Not Secure." Modern APIs and services use HTTPS exclusively. Let's Encrypt provides free TLS certificates.
+
+When developing locally, you typically use HTTP (`http://localhost:3000`). In production, you use HTTPS, usually terminated at a reverse proxy (nginx, Cloudflare, AWS ALB) that handles the TLS certificate and forwards decrypted traffic to your application.
+
+---
+
+## Networking Commands
+
+### curl
+
+`curl` is the most versatile HTTP client on the command line. The basic usage is covered in the Linux Commands document. Here are patterns specific to HTTP work.
+
+Viewing response headers:
+
+```bash
+curl -I https://api.example.com
+# shows only the response headers (HEAD request)
+
+curl -i https://api.example.com
+# shows headers AND body
+
+curl -v https://api.example.com
+# verbose: shows the full request and response, including TLS handshake
+```
+
+Sending JSON:
+
+```bash
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice", "email": "alice@example.com"}'
+```
+
+Sending with authentication:
+
+```bash
+# Bearer token
+curl -H "Authorization: Bearer eyJhbG..." https://api.example.com/me
+
+# Basic auth
+curl -u username:password https://api.example.com/me
+```
+
+Following redirects:
+
+```bash
+curl -L https://example.com
+# follows 3xx redirects automatically
+```
+
+Saving response to a file:
+
+```bash
+curl -o output.json https://api.example.com/data
+```
+
+Showing only the status code:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://api.example.com
+# 200
+```
+
+### wget
+
+`wget` is simpler than curl and is primarily for downloading files:
+
+```bash
+wget https://example.com/file.zip
+wget -O output.zip https://example.com/file.zip
+wget -c https://example.com/large-file.zip   # resume interrupted download
+wget -q https://example.com/file.zip          # quiet mode
+```
+
+### ping
+
+`ping` tests basic network connectivity by sending ICMP echo requests. It tells you if a host is reachable and how long the round trip takes.
+
+```bash
+ping google.com
+# PING google.com (142.250.80.46): 56 data bytes
+# 64 bytes from 142.250.80.46: icmp_seq=0 ttl=118 time=12.3 ms
+# 64 bytes from 142.250.80.46: icmp_seq=1 ttl=118 time=11.8 ms
+```
+
+The `time=12.3 ms` is the round-trip time. Higher values mean more latency. `ping` does not use HTTP at all; it operates at the network layer using ICMP.
+
+```bash
+ping -c 5 google.com    # send 5 pings and stop
+```
+
+### traceroute
+
+`traceroute` shows the path network packets take from your machine to a destination. It reveals every router (hop) along the way.
+
+```bash
+traceroute google.com
+# traceroute to google.com (142.250.80.46), 30 hops max
+#  1  router.local (192.168.1.1)  1.234 ms
+#  2  isp-gateway.net (10.0.0.1)  5.678 ms
+#  3  core-router.isp.com (172.16.0.1)  12.345 ms
+#  ...
+# 10  google.com (142.250.80.46)  15.678 ms
+```
+
+Each line is a hop. The times show the round-trip latency to that hop. If a hop shows `* * *`, the router is not responding to traceroute probes (this is common and does not necessarily indicate a problem).
+
+`traceroute` is useful for diagnosing where network slowness or failures are occurring. If latency jumps dramatically at a specific hop, that is where the problem is.
+
+On macOS, the command is `traceroute`. On some systems, `tracepath` is an alternative that does not require root privileges.
+
+### dig
+
+`dig` (Domain Information Groper) queries DNS servers to look up the IP address associated with a domain name.
+
+```bash
+dig example.com
+# ;; ANSWER SECTION:
+# example.com.        3600    IN    A    93.184.216.34
+```
+
+The answer shows that `example.com` resolves to IP address `93.184.216.34`, with a TTL (time to live) of 3600 seconds.
+
+Querying specific record types:
+
+```bash
+dig example.com A         # IPv4 address
+dig example.com AAAA      # IPv6 address
+dig example.com MX        # mail servers
+dig example.com CNAME     # canonical name (alias)
+dig example.com NS        # authoritative name servers
+dig example.com TXT       # text records (SPF, DKIM, verification)
+```
+
+Short output:
+
+```bash
+dig +short example.com
+# 93.184.216.34
+```
+
+Using a specific DNS server:
+
+```bash
+dig @8.8.8.8 example.com
+# queries Google's DNS server instead of your default
+```
+
+`dig` is the preferred DNS diagnostic tool. It gives detailed output about the query, response, and timing.
+
+### nslookup
+
+`nslookup` is an older DNS lookup tool. It does the same thing as `dig` but with simpler output.
+
+```bash
+nslookup example.com
+# Server:    192.168.1.1
+# Address:   192.168.1.1#53
+#
+# Non-authoritative answer:
+# Name:   example.com
+# Address: 93.184.216.34
+```
+
+Reverse lookup (IP to hostname):
+
+```bash
+nslookup 93.184.216.34
+```
+
+`dig` is generally preferred over `nslookup` because it provides more detailed output and is more scriptable. But `nslookup` is available on every platform including Windows, making it useful when `dig` is not installed.
+
+### nc (netcat)
+
+`nc` (netcat) is a low-level networking utility that reads and writes data across network connections. It is often called the "Swiss army knife" of networking.
+
+Testing if a port is open:
+
+```bash
+nc -zv example.com 443
+# Connection to example.com port 443 [tcp/https] succeeded!
+
+nc -zv localhost 3000
+# Connection to localhost port 3000 [tcp/*] succeeded!
+```
+
+The `-z` flag means scan mode (just check, do not send data). The `-v` flag means verbose.
+
+Testing multiple ports:
+
+```bash
+nc -zv localhost 3000-3010
+# scans ports 3000 through 3010
+```
+
+Sending a raw HTTP request:
+
+```bash
+echo -e "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n" | nc example.com 80
+```
+
+This sends a hand-crafted HTTP request directly over a TCP connection. The response comes back as raw text. This is useful for understanding HTTP at the protocol level and for debugging.
+
+Creating a simple server (listening on a port):
+
+```bash
+nc -l 8080
+# listens on port 8080, prints whatever a client sends
+```
+
+In another terminal:
+
+```bash
+echo "hello" | nc localhost 8080
+# sends "hello" to the listening nc process
+```
+
+Transferring a file between two machines:
+
+```bash
+# On the receiving machine:
+nc -l 9000 > received_file.txt
+
+# On the sending machine:
+nc destination_host 9000 < file_to_send.txt
+```
+
+### ss
+
+`ss` (socket statistics) shows network connections. It is the modern replacement for `netstat`.
+
+```bash
+ss -tlnp
+# -t: TCP sockets
+# -l: listening (servers waiting for connections)
+# -n: numeric (show port numbers, not service names)
+# -p: show process name and PID
+
+# State    Recv-Q  Send-Q  Local Address:Port  Peer Address:Port  Process
+# LISTEN   0       128     0.0.0.0:3000        0.0.0.0:*          users:(("node",pid=1234,fd=3))
+# LISTEN   0       128     0.0.0.0:5432        0.0.0.0:*          users:(("postgres",pid=567,fd=4))
+```
+
+This shows that `node` is listening on port 3000 and `postgres` is listening on port 5432.
+
+```bash
+ss -tnp
+# shows established (active) TCP connections, not just listening
+
+ss -s
+# summary statistics: total connections, TCP states, etc.
+```
+
+### lsof for Networking
+
+`lsof` (list open files) can show network connections because sockets are file descriptors:
+
+```bash
+lsof -i :3000
+# COMMAND  PID  USER   FD   TYPE  DEVICE SIZE/OFF NODE NAME
+# node    1234 alice    3u  IPv4   28372      0t0  TCP *:3000 (LISTEN)
+```
+
+This immediately tells you which process is using port 3000. It is one of the most useful debugging commands when you get "port already in use" errors.
+
+```bash
+lsof -i :3000
+# find what's using port 3000
+
+lsof -i tcp
+# all TCP connections
+
+lsof -i -P -n
+# all network connections, numeric ports and addresses (fast)
+```
+
+### Combining Commands for Debugging
+
+A common debugging workflow:
+
+```bash
+# 1. Is the port open?
+nc -zv localhost 3000
+
+# 2. What process is using it?
+lsof -i :3000
+
+# 3. Can I reach the server?
+curl -v http://localhost:3000
+
+# 4. Is DNS resolving correctly?
+dig api.example.com +short
+
+# 5. Can I reach the remote host at all?
+ping api.example.com
+
+# 6. Where is the network path breaking?
+traceroute api.example.com
+```
+
+This sequence moves from the most specific check (is the port open?) to the most general (is the network path intact?). Starting specific and widening is the fastest way to isolate network problems.

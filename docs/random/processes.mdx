@@ -1,0 +1,525 @@
+---
+title: Processes
+description: How processes work in the operating system, from PIDs and fork to zombies, virtual memory, threads, and context switching
+---
+
+## What is a Process
+
+A process is a **running instance of a program**. A program is a file on disk (like `/usr/bin/node`). When you run that program, the operating system creates a process: it loads the program's code into memory, allocates resources for it, and starts executing its instructions.
+
+The same program can have multiple processes. If you open three terminal windows and run `node` in each one, there are three separate processes, each with its own memory, its own state, and its own process ID. They are independent of each other even though they all came from the same program file.
+
+A process has its own:
+
+- **Address space** (its own view of memory)
+- **Program counter** (which instruction it is currently executing)
+- **Registers** (CPU state)
+- **Open file descriptors** (files, sockets, pipes it has open)
+- **Environment variables**
+- **Working directory**
+- **Process ID (PID)**
+
+---
+
+## PID (Process ID)
+
+Every process on the system has a unique integer called its **PID** (Process ID). The kernel assigns PIDs sequentially as processes are created.
+
+```bash
+echo $$
+# 12345
+```
+
+The special variable `$$` in the shell contains the PID of the current shell process.
+
+You can see the PIDs of running processes with `ps`:
+
+```bash
+ps aux
+# USER       PID  %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+# root         1   0.0  0.1  16940  4848 ?        Ss   Jan01   0:05 /sbin/init
+# alice     3421   0.2  1.5 725400 60200 pts/0    Ssl  10:00   0:12 node server.js
+# alice     3500   0.0  0.1  10200  2400 pts/1    R+   10:30   0:00 ps aux
+```
+
+### PID 1
+
+PID 1 is special. It is the first process started by the kernel during boot. On modern Linux systems, this is typically `systemd` (or `init` on older systems). Every other process on the system is a descendant of PID 1. If PID 1 dies, the system panics and shuts down.
+
+---
+
+## PPID (Parent Process ID)
+
+Every process (except PID 1) has a **parent process**. The PPID (Parent Process ID) identifies which process created it.
+
+```bash
+echo $PPID
+# 3400
+```
+
+When you type a command in the shell, the shell (the parent) creates a new process (the child) to run that command. The child's PPID is the shell's PID.
+
+```bash
+ps -o pid,ppid,comm
+#   PID  PPID COMMAND
+#  3400  3399 zsh
+#  3421  3400 node
+#  3500  3400 ps
+```
+
+Here, `zsh` (PID 3400) is the parent of both `node` (PID 3421) and `ps` (PID 3500). The shell created both of those child processes.
+
+### The Process Tree
+
+All processes on the system form a tree. PID 1 is the root. Every other process has a parent, and that parent has a parent, all the way up to PID 1.
+
+You can visualize the tree with `pstree`:
+
+```bash
+pstree
+# systemd─┬─sshd───sshd───zsh───node
+#          ├─nginx───nginx
+#          ├─postgres───postgres
+#          └─cron
+```
+
+---
+
+## How New Processes are Created (fork and exec)
+
+On Unix, new processes are created through a two-step mechanism: **fork** and **exec**.
+
+### fork
+
+The `fork` system call creates a new process by duplicating the calling process. The new process (the child) is an almost exact copy of the parent: same code, same memory contents, same open file descriptors, same environment variables. The only differences are the PID (the child gets a new one) and the return value of `fork` (which tells the process whether it is the parent or the child).
+
+After a fork, you have two processes running the same code at the same point. They then diverge based on the return value.
+
+### exec
+
+The `exec` system call replaces the current process's program with a new program. It loads a new executable into the process's memory, replacing everything: the code, the data, and the stack. The PID stays the same. The process is now running a completely different program.
+
+### How the Shell Uses fork and exec
+
+When you type `ls` in the shell:
+
+1. The shell calls `fork`, creating a child process that is a copy of the shell
+2. The child process calls `exec` with the `ls` program. The child is now running `ls` instead of the shell
+3. `ls` runs, produces output, and exits
+4. The parent shell (which was waiting) gets notified that the child finished and prints the prompt
+
+This is why environment variables set in a child process do not affect the parent. The child is a separate process. Its changes to its own environment die with it.
+
+---
+
+## Process States
+
+A process is always in one of several states. The kernel tracks these states and moves processes between them based on what is happening.
+
+### Running (R)
+
+The process is either actively executing on a CPU core right now, or it is in the run queue waiting for its turn on the CPU. On a single-core system, only one process can be truly running at any given instant. On a multi-core system, one process per core can be running simultaneously.
+
+### Sleeping (S or D)
+
+The process is waiting for something to happen. There are two kinds:
+
+**Interruptible sleep (S)**: The process is waiting for an event (network data to arrive, a file read to complete, user input, a timer to expire). It can be woken up by a signal. This is the most common state for processes. A web server waiting for a request is in interruptible sleep.
+
+**Uninterruptible sleep (D)**: The process is waiting for a hardware operation (typically disk I/O) that cannot be interrupted. You cannot send signals to a process in this state. It will wake up when the I/O completes. A process stuck in D state usually indicates a hardware or driver problem.
+
+### Stopped (T)
+
+The process has been paused by a signal (SIGSTOP or SIGTSTP). It is not running and will not run until it receives SIGCONT. This is what happens when you press `Ctrl+Z` in the terminal.
+
+### Zombie (Z)
+
+The process has finished executing, but its entry still exists in the process table because the parent has not yet read its exit status. A zombie is not consuming CPU or memory (its resources have been released), but it occupies a slot in the process table. More on this below.
+
+### Viewing Process States
+
+The `STAT` column in `ps aux` shows the current state:
+
+```bash
+ps aux
+# USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+# alice     1234  0.0  0.1  10000  2000 pts/0    S    10:00   0:00 bash
+# alice     1235 99.0  0.5  50000 10000 pts/0    R    10:01   0:05 ./compute
+# alice     1236  0.0  0.0      0     0 pts/0    Z    10:02   0:00 [defunct]
+# alice     1237  0.0  0.0   5000  1000 pts/0    T    10:03   0:00 vim file.txt
+```
+
+Additional characters after the state letter provide more detail:
+- `s` means the process is a session leader
+- `+` means the process is in the foreground process group
+- `l` means the process is multi-threaded
+- `<` means high-priority
+- `N` means low-priority
+
+---
+
+## Foreground and Background Processes
+
+A **foreground process** is connected to your terminal. It receives input from your keyboard, and its output appears in your terminal. While a foreground process is running, the shell waits for it to finish before accepting new commands.
+
+A **background process** runs without blocking the terminal. The shell starts it and immediately gives you the prompt back. Background processes do not receive keyboard input from the terminal. If a background process tries to read from the terminal, it gets suspended by the kernel.
+
+```bash
+./server &
+# [1] 5678
+# the shell is free, you can type more commands
+```
+
+The foreground/background distinction is a **terminal** concept, not an operating system concept. The kernel does not really care whether a process is in the foreground or background. The terminal driver and the shell manage this distinction using process groups and signals.
+
+---
+
+## Daemons
+
+A **daemon** is a process that runs in the background, detached from any terminal, and typically starts at boot. Daemons provide system services: web servers, database servers, SSH servers, cron schedulers, and logging systems are all daemons.
+
+The word "daemon" comes from Greek mythology (a spirit working in the background). It is not an acronym.
+
+### Characteristics of a Daemon
+
+- It has no controlling terminal (it is detached from any terminal session)
+- It typically runs as a system user (like `www-data`, `postgres`, or `nobody`), not as your personal user
+- It starts automatically at boot
+- It runs continuously, waiting for work (incoming connections, scheduled tasks, etc.)
+- Its parent is typically PID 1 (init/systemd)
+
+### Services
+
+A **service** is a more modern term for a managed daemon. On systems using `systemd` (most modern Linux distributions), services are managed through `systemctl`:
+
+```bash
+systemctl status nginx
+# shows whether nginx is running, its PID, recent log output
+
+systemctl start nginx
+# starts the nginx service
+
+systemctl stop nginx
+# stops the nginx service
+
+systemctl restart nginx
+# stops and starts the nginx service
+
+systemctl enable nginx
+# configures nginx to start automatically at boot
+
+systemctl disable nginx
+# prevents nginx from starting at boot
+```
+
+The distinction between "daemon" and "service" is blurry. In practice, people use the terms interchangeably. If someone says "start the Postgres service" or "start the Postgres daemon," they mean the same thing.
+
+---
+
+## Process Groups and Sessions
+
+The kernel organizes processes into **process groups** and **sessions**. These concepts underpin job control and terminal management.
+
+### Process Group
+
+A process group is a collection of related processes. When you run a pipeline:
+
+```bash
+cat file.txt | grep "error" | sort
+```
+
+The shell creates three processes (`cat`, `grep`, `sort`) and places them all in the same process group. This allows the shell (and the terminal driver) to send signals to all of them at once. When you press `Ctrl+C`, the terminal sends SIGINT to the entire foreground process group, killing all three processes in the pipeline simultaneously.
+
+Each process group has a **process group ID (PGID)**, which is the PID of the first process in the group (the group leader).
+
+### Session
+
+A session is a collection of process groups, typically all associated with one terminal. When you open a terminal, a new session is created. The shell is the **session leader**.
+
+A session can have at most one **foreground process group** (the one receiving terminal input) and any number of **background process groups**.
+
+```bash
+# foreground process group:
+cat file.txt | grep "error"
+
+# background process groups:
+./server &
+./worker &
+```
+
+When you close the terminal, the session ends and SIGHUP is sent to all processes in the session. This is why background processes die when you close the terminal (unless you used `nohup` or `disown`).
+
+---
+
+## Signals (From the Process Perspective)
+
+Signals were covered from the shell's perspective in the Shell Fundamentals document. Here is how they work from the operating system's perspective.
+
+A signal is an asynchronous notification delivered to a process. When a process receives a signal, its normal execution is interrupted, and a **signal handler** runs instead.
+
+### Default Signal Handlers
+
+Every signal has a default action that the kernel takes if the process has not installed a custom handler:
+
+- **Terminate**: The process is killed (SIGTERM, SIGINT, SIGHUP)
+- **Core dump**: The process is killed and a core dump file is written for debugging (SIGSEGV, SIGABRT)
+- **Stop**: The process is suspended (SIGSTOP, SIGTSTP)
+- **Ignore**: The signal is silently discarded (SIGCHLD, SIGURG)
+- **Continue**: A stopped process is resumed (SIGCONT)
+
+### Custom Signal Handlers
+
+A process can install custom handlers for most signals. For example, a web server might catch SIGTERM and respond by stopping the acceptance of new connections, finishing in-flight requests, and then exiting cleanly. This is called a **graceful shutdown**.
+
+```python
+# Python example of a signal handler
+import signal
+import sys
+
+def handle_sigterm(signum, frame):
+    print("Received SIGTERM, shutting down gracefully...")
+    # close database connections, flush buffers, etc.
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+```
+
+### Uncatchable Signals
+
+Two signals cannot be caught, blocked, or ignored:
+
+- **SIGKILL (9)**: Immediately terminates the process. The process gets no chance to run any cleanup code.
+- **SIGSTOP (19)**: Immediately stops (suspends) the process. The process cannot prevent this.
+
+These exist as a guarantee that the system administrator can always stop or kill a process, no matter what the process is doing.
+
+---
+
+## Zombie Processes
+
+A zombie process is a process that has finished executing but still has an entry in the kernel's process table. It appears in `ps` output with a `Z` state and the word `[defunct]`.
+
+### Why Zombies Exist
+
+When a process exits, the kernel keeps a minimal entry for it in the process table. This entry contains the process's exit status and some accounting information. The entry exists so that the **parent process** can retrieve the child's exit status by calling `wait()` or `waitpid()`.
+
+The parent is responsible for reading this information. Until the parent does so, the child remains a zombie.
+
+### The Lifecycle
+
+1. The child process finishes and calls `exit()`
+2. The kernel releases the child's memory, file descriptors, and other resources
+3. The kernel keeps a small entry in the process table with the exit status
+4. The child is now a zombie
+5. The parent calls `wait()` and reads the exit status
+6. The kernel removes the zombie entry from the process table
+
+### Are Zombies Harmful
+
+A single zombie is harmless. It uses no CPU, no memory (beyond the tiny process table entry), and no file descriptors. The problem arises when a parent process keeps creating children but never calls `wait()` to reap them. Over time, thousands of zombies can accumulate and exhaust the process table, preventing new processes from being created.
+
+### Fixing Zombies
+
+You cannot kill a zombie with `kill -9`. The process is already dead. The entry is just waiting to be cleaned up by the parent. The only solutions are:
+
+- Fix the parent process so it properly calls `wait()` on its children
+- Kill the parent process. When the parent dies, the zombies become orphans and are adopted by PID 1, which always calls `wait()` and reaps them
+
+---
+
+## Orphan Processes
+
+An orphan process is a process whose parent has died. When a parent process exits, all of its children become orphans.
+
+The kernel does not leave orphans without a parent. PID 1 (init/systemd) automatically **adopts** all orphan processes. Their PPID changes to 1.
+
+PID 1 is designed to periodically call `wait()` on its children, which means it will clean up any zombies left behind by the original parent. This is why killing the parent of zombie processes clears the zombies.
+
+```bash
+# Process tree before parent dies:
+# shell(100) → parent(200) → child(300)
+
+# After parent(200) exits:
+# shell(100)
+# init(1) → child(300)
+```
+
+The child continues running normally. It has no idea its original parent is gone (unless it checks its PPID and notices it has changed to 1).
+
+---
+
+## CPU and Memory Usage
+
+When you look at `ps aux` or `top`, two columns stand out: `%CPU` and `%MEM`.
+
+### %CPU
+
+This is the percentage of CPU time the process has used since it started (for `ps`) or in the recent measurement window (for `top`). A value of 100% means the process is using one full CPU core continuously.
+
+On a multi-core system, a single process can exceed 100% if it has multiple threads running on different cores. A multi-threaded process on a 4-core system could theoretically reach 400%.
+
+### %MEM
+
+This is the percentage of the system's total physical memory (RAM) that the process is using.
+
+### VSZ and RSS
+
+`ps` also shows two memory columns:
+
+- **VSZ** (Virtual Size): The total amount of virtual memory the process has mapped. This includes memory it has allocated but not yet used, shared libraries, and memory-mapped files. VSZ is usually much larger than actual memory usage.
+
+- **RSS** (Resident Set Size): The amount of physical RAM the process is currently using. This is the more meaningful number for understanding actual memory consumption. However, RSS includes shared libraries that are shared between multiple processes, so summing RSS across all processes will overcount.
+
+```bash
+ps aux --sort=-%mem | head -5
+# sorts processes by memory usage, shows top 5
+```
+
+---
+
+## Virtual Memory
+
+Virtual memory is a fundamental operating system concept that every developer should understand. It creates the illusion that each process has its own large, contiguous block of memory, even when the physical RAM is limited and shared among many processes.
+
+### The Problem Virtual Memory Solves
+
+Without virtual memory, every process would directly access physical RAM. This creates several problems:
+
+- One process could read or write another process's memory, causing crashes or security vulnerabilities
+- A process would need to know exactly which physical addresses are available
+- There would be no way to run programs that need more memory than physically installed
+- Loading programs at fixed addresses would be impractical
+
+### How It Works
+
+Each process gets its own **virtual address space**. When the process accesses memory address 0x1000, that does not correspond to physical address 0x1000 in RAM. The CPU's **Memory Management Unit (MMU)** translates virtual addresses to physical addresses using a **page table** maintained by the kernel.
+
+### Pages
+
+Memory is divided into fixed-size blocks called **pages** (typically 4 KB). The kernel maps virtual pages to physical pages (called **frames**). Not all virtual pages need to be in physical RAM at the same time.
+
+If a process accesses a page that is not currently in RAM, the CPU triggers a **page fault**. The kernel handles the fault by loading the needed page from disk (the swap space) into a free physical frame, updating the page table, and letting the process continue. The process has no idea this happened.
+
+### Swap Space
+
+Swap is a designated area on disk (a partition or a file) that acts as an overflow for physical RAM. When the system runs low on physical memory, the kernel moves less-recently-used pages from RAM to swap, freeing up physical frames for pages that are actively needed. This is called **swapping** or **paging out**.
+
+Swap is much slower than RAM (hundreds of times slower for SSDs, thousands of times for HDDs). Heavy swapping causes noticeable system slowdown, a condition sometimes called **thrashing**.
+
+### Why VSZ Can Be Huge
+
+Virtual memory explains why a process's VSZ can be much larger than physical RAM. The process has a large virtual address space, but only the pages it actually touches need to be in physical memory. A process might map 2 GB of virtual memory but only actively use 100 MB.
+
+---
+
+## File Descriptors (Beyond stdin/stdout/stderr)
+
+Every open file, socket, pipe, or device that a process is using is represented by a **file descriptor** (a small integer). Processes start with three: 0 (stdin), 1 (stdout), and 2 (stderr). When a process opens additional resources, it gets higher-numbered file descriptors: 3, 4, 5, and so on.
+
+```bash
+lsof -p 1234
+# COMMAND  PID  USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+# node    1234 alice    0u   CHR  136,0      0t0    3 /dev/pts/0
+# node    1234 alice    1u   CHR  136,0      0t0    3 /dev/pts/0
+# node    1234 alice    2u   CHR  136,0      0t0    3 /dev/pts/0
+# node    1234 alice    3u  IPv4  28372      0t0  TCP *:3000 (LISTEN)
+# node    1234 alice    4r   REG    8,1     2048  123 /home/alice/app/config.json
+# node    1234 alice    5u  IPv4  28401      0t0  TCP 192.168.1.10:3000->10.0.0.5:52400 (ESTABLISHED)
+```
+
+FD 0, 1, 2 are the standard streams (connected to the terminal). FD 3 is a TCP socket listening on port 3000. FD 4 is a regular file open for reading. FD 5 is an established TCP connection to a client.
+
+### File Descriptor Limits
+
+Each process has a limit on how many file descriptors it can have open at once. You can check this:
+
+```bash
+ulimit -n
+# 1024
+```
+
+This means a process can have at most 1024 open file descriptors by default. This limit matters for servers that handle many concurrent connections. A web server with 1000 clients would need at least 1000 file descriptors just for the client sockets, plus the standard streams and log files. Running out of file descriptors causes "Too many open files" errors.
+
+To increase the limit:
+
+```bash
+ulimit -n 65536
+```
+
+Or permanently in `/etc/security/limits.conf`:
+
+```
+alice  soft  nofile  65536
+alice  hard  nofile  65536
+```
+
+### File Descriptor Leaks
+
+A file descriptor leak happens when a program opens files or sockets but never closes them. Over time, the process accumulates open file descriptors until it hits the limit and can no longer open anything new. This is conceptually similar to a memory leak but for I/O resources.
+
+---
+
+## Threads
+
+A thread is a unit of execution within a process. A process starts with one thread (the **main thread**), but it can create additional threads. All threads within a process share the same address space, the same open file descriptors, and the same environment. But each thread has its own:
+
+- Program counter (where it is in the code)
+- Stack (local variables and function call history)
+- Registers (CPU state)
+
+### Threads vs Processes
+
+The key difference is **memory isolation**.
+
+Processes have separate address spaces. One process cannot directly access another process's memory. Communication between processes requires explicit mechanisms like pipes, sockets, or shared memory segments. Creating a new process (fork) is relatively expensive because the kernel must set up a new address space.
+
+Threads share the same address space. One thread can directly read and write variables used by another thread in the same process. This makes communication between threads fast (just read/write shared memory), but it also introduces the risk of **race conditions** where two threads modify the same data simultaneously and produce corrupt results.
+
+### Why Threads Exist
+
+Threads allow a single program to do multiple things concurrently. A web server can use one thread per client connection. A GUI application can use one thread for the interface and another for background computation, keeping the UI responsive.
+
+Threads are cheaper to create and switch between than processes because they share memory. Creating a thread does not require duplicating the address space.
+
+### The Tradeoff
+
+The shared memory that makes threads fast also makes them dangerous. Bugs caused by unsynchronized access to shared data (race conditions, deadlocks) are among the hardest to diagnose and fix in programming. This is why languages like Rust have ownership and borrowing rules that prevent data races at compile time, and why many modern systems prefer message-passing concurrency (like Go's channels) over shared-memory concurrency.
+
+---
+
+## Context Switching
+
+A modern system runs hundreds or thousands of processes, but a CPU core can only execute one thread at a time. The operating system creates the illusion of simultaneous execution by rapidly switching between threads. This switching is called a **context switch**.
+
+### What Happens During a Context Switch
+
+When the kernel decides to switch from thread A to thread B on a CPU core:
+
+1. **Save A's state**: The kernel saves A's CPU registers, program counter, and stack pointer into A's kernel data structure (the process control block or task struct)
+2. **Restore B's state**: The kernel loads B's previously saved registers, program counter, and stack pointer into the CPU
+3. **Switch address space** (if switching to a different process's thread): The kernel updates the CPU's page table pointer so the MMU translates addresses using B's process's page table
+4. **Resume B**: The CPU begins executing B from where it last stopped
+
+### The Cost of Context Switching
+
+Context switches are not free. The costs include:
+
+- **Direct cost**: Saving and restoring registers, updating kernel data structures. This takes microseconds.
+- **Indirect cost**: The CPU caches (L1, L2, L3) are filled with data from thread A. After switching to thread B, thread B's data is not in the cache, causing **cache misses** that slow execution until the cache "warms up" with B's data. This indirect cost is often larger than the direct cost.
+
+### When Context Switches Happen
+
+The kernel switches contexts when:
+
+- A thread's **time slice** (quantum) expires. The kernel gives each thread a small amount of time (typically a few milliseconds) before preempting it and giving the CPU to another thread. This is **preemptive multitasking**.
+- A thread voluntarily gives up the CPU by making a blocking system call (reading from a file, waiting for network data, sleeping).
+- A higher-priority thread becomes runnable.
+- A thread is suspended by a signal (SIGSTOP, SIGTSTP).
+
+### Why This Matters for Developers
+
+Understanding context switching explains several practical phenomena:
+
+- **High thread counts cause slowdown**: If you create thousands of threads, the CPU spends a significant fraction of its time just switching between them rather than doing useful work.
+- **Blocking I/O wastes CPU time**: When a thread blocks on I/O, the kernel context-switches to another thread. This is fine with a few threads, but with thousands, the switching overhead adds up. This is why event-driven architectures (Node.js, nginx) and async I/O (Rust's tokio, Python's asyncio) are popular for I/O-heavy workloads: they handle many connections with fewer threads, reducing context switches.
+- **CPU-bound vs I/O-bound**: A CPU-bound process uses its entire time slice computing. An I/O-bound process frequently gives up the CPU to wait for data. Understanding this distinction helps you choose between threads, async I/O, or multiple processes for your workload.

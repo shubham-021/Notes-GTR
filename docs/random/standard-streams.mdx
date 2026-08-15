@@ -1,0 +1,605 @@
+---
+title: Standard Streams
+description: Understanding stdin, stdout, stderr, file descriptors, redirection, and pipes from the ground up
+---
+
+## What "std" Means
+
+`std` is short for **standard**. In the context of Unix I/O, there are three terms that come up constantly: `stdin`, `stdout`, and `stderr`. These stand for standard input, standard output, and standard error respectively.
+
+These are the three **standard streams** that every process receives when it starts. A stream is a flow of data into or out of a program. The program does not need to know where its input is coming from or where its output is going. It simply reads from stdin and writes to stdout or stderr.
+
+Every running program has these three channels open by default:
+
+- **stdin** receives data into the program
+- **stdout** carries normal output out of the program
+- **stderr** carries error and diagnostic output out of the program
+
+The program can receive data through stdin, produce normal output through stdout, and produce error or diagnostic output through stderr.
+
+---
+
+## Streams
+
+A stream is a flow of data. Think of a program as a machine with an input side and an output side. Data flows in, the program processes it, and data flows out.
+
+The input and output do not necessarily have to be files. They can be connected to a terminal, a file, another program, a pipe, a network connection, `/dev/null`, or many other things.
+
+This is a fundamental Unix idea: a program does not need to know where its input or output is actually going. It just reads from stdin and writes to stdout and stderr. The environment decides what those streams are connected to.
+
+---
+
+## stdin
+
+stdin stands for **standard input**. It is where a program normally reads input from.
+
+For example, if you run `cat` with no arguments:
+
+```bash
+cat
+```
+
+and type `hello`, then press Enter, you will see `hello` printed back.
+
+What is happening under the hood: your keyboard feeds into the terminal, which is connected to `cat`'s stdin. `cat` reads from stdin and writes what it received to stdout. stdout is connected back to the terminal, so you see the text appear on your screen.
+
+The flow is: **keyboard → stdin → cat → stdout → terminal**.
+
+`cat` reads what you type from stdin and writes it to stdout. You are typing on your keyboard, which is connected to the terminal, which is connected to the program's stdin. The data flows in.
+
+---
+
+## stdout
+
+stdout stands for **standard output**. This is where a program normally sends its regular, expected output.
+
+For example:
+
+```bash
+ls
+```
+
+`ls` produces a list of files and writes that list to stdout. Normally, stdout is connected to your terminal, so you see the output on your screen.
+
+The flow is: **ls → stdout → terminal**.
+
+The output you see:
+
+```
+Documents
+Downloads
+Movies
+Projects
+```
+
+is coming through stdout.
+
+---
+
+## stderr
+
+stderr stands for **standard error**. It is used for errors and diagnostic messages.
+
+For example:
+
+```bash
+ls nonexistent
+```
+
+produces:
+
+```
+ls: nonexistent: No such file or directory
+```
+
+That message is written to stderr, not stdout. The program deliberately separates its normal output from its error output.
+
+A program therefore has two distinct output channels: stdout carries normal output, and stderr carries errors and diagnostics. They are independent of each other.
+
+---
+
+## Why Separate stdout and stderr
+
+This separation is one of the cleverer aspects of Unix design.
+
+Suppose a program produces:
+
+```
+file1
+file2
+file3
+ERROR: couldn't read file4
+file5
+```
+
+If everything went through a single output stream, there would be no way to programmatically separate the normal data from the errors. But because Unix splits them:
+
+**stdout** receives: `file1`, `file2`, `file3`, `file5`
+
+**stderr** receives: `ERROR: couldn't read file4`
+
+You can now redirect them independently. For example:
+
+```bash
+some_program > output.txt
+```
+
+This sends stdout to `output.txt`, but errors still appear in your terminal. stdout goes to `output.txt`, stderr goes to the terminal.
+
+The program's normal output is captured in the file, while errors remain visible. This is only possible because they are separate streams.
+
+---
+
+## File Descriptor Numbers
+
+Unix assigns each standard stream a number called a **file descriptor**.
+
+- **0** = stdin
+- **1** = stdout
+- **2** = stderr
+
+These numbers appear constantly when working with shell commands. They are how the shell identifies which stream a redirection applies to.
+
+---
+
+## What is a File Descriptor
+
+A file descriptor (often abbreviated FD) is a small integer that a process uses to refer to an open input/output resource. Every process automatically gets FD 0 for stdin, FD 1 for stdout, and FD 2 for stderr.
+
+A file descriptor does not necessarily refer to an actual file on disk. It can refer to a terminal, a regular file, a pipe, a socket, `/dev/null`, or any other I/O resource. Unix treats many of these things through the same basic file-descriptor interface.
+
+The name "file descriptor" comes from Unix's historical design philosophy where many resources are interacted with like files. A process gets a small integer representing each open resource. For example, a process might have FD 0 pointing to terminal input, FD 1 and FD 2 pointing to terminal output, FD 3 pointing to `some_file.txt`, and FD 4 pointing to a network socket.
+
+You can think of the number as a handle. The kernel maintains a per-process table mapping these numbers to the actual underlying resources. Your program just uses the number.
+
+---
+
+## The Default Setup
+
+When you run a program from a terminal:
+
+```bash
+./program
+```
+
+The shell gives it three file descriptors, all connected to the terminal: FD 0 reads from the terminal, FD 1 writes to the terminal, and FD 2 writes to the terminal.
+
+That is the default. stdin, stdout, and stderr all point to the same terminal. The program reads from the terminal and writes to the terminal. Redirection changes these connections.
+
+---
+
+## Redirecting stdout with >
+
+The `>` operator redirects stdout to a file.
+
+```bash
+ls > files.txt
+```
+
+Without redirection, the flow is: **ls → stdout → terminal**.
+
+With `>`, the flow becomes: **ls → stdout → files.txt**.
+
+The `>` operator takes file descriptor 1 (stdout) and points it at `files.txt` instead of the terminal. You can write this explicitly:
+
+```bash
+ls 1> files.txt
+```
+
+These two forms are equivalent because `>` defaults to FD 1.
+
+If the file does not exist, it is created. If it does exist, its contents are replaced.
+
+---
+
+## Redirecting stdin with <
+
+The `<` operator redirects stdin from a file.
+
+```bash
+program < input.txt
+```
+
+Instead of reading from the keyboard (the default flow: **keyboard → stdin → program**), the program reads from a file: **input.txt → stdin → program**.
+
+The explicit form is:
+
+```bash
+program 0< input.txt
+```
+
+because stdin is FD 0.
+
+---
+
+## Redirecting stderr with 2>
+
+Since stderr is FD 2, you redirect it with `2>`:
+
+```bash
+program 2> errors.txt
+```
+
+This sends stderr to `errors.txt` while stdout still goes to the terminal. stdout goes to the terminal, stderr goes to `errors.txt`.
+
+This is useful for keeping error logs separate from normal output.
+
+---
+
+## stdout and stderr are Independent
+
+This is worth emphasizing because it trips people up.
+
+Suppose a program produces `Hello` and `World` on stdout, and `ERROR!` on stderr.
+
+If you run:
+
+```bash
+program > output.txt
+```
+
+The file `output.txt` will contain:
+
+```
+Hello
+World
+```
+
+And the terminal will show:
+
+```
+ERROR!
+```
+
+Because `>` only redirects stdout. stderr is a completely separate channel. To capture stderr, you need `2>`. To capture both, you need to explicitly redirect both.
+
+---
+
+## Redirecting Both stdout and stderr
+
+To send both streams to the same file:
+
+```bash
+program > output.txt 2>&1
+```
+
+This syntax deserves careful attention.
+
+### Breaking Down 2>&1
+
+- `2` refers to stderr
+- `>` means redirect
+- `&` means "what follows is another file descriptor, not a filename"
+- `1` refers to stdout
+
+So `2>&1` means: make FD 2 go wherever FD 1 currently goes.
+
+The `&` is critical. Without it, `2>1` would mean "redirect stderr to a file literally named `1`." The ampersand says "I am referring to a file descriptor, not a filename."
+
+With the full command:
+
+```bash
+program > output.txt 2>&1
+```
+
+The shell processes this left to right:
+
+First, `> output.txt` makes FD 1 (stdout) point to `output.txt`.
+
+Then, `2>&1` makes FD 2 (stderr) point to the same destination as FD 1, which is now `output.txt`.
+
+Result: both stdout and stderr end up in `output.txt`.
+
+---
+
+## Order of Redirections Matters
+
+These two commands are **not** equivalent:
+
+```bash
+program > output.txt 2>&1
+```
+
+```bash
+program 2>&1 > output.txt
+```
+
+The shell processes redirections from left to right.
+
+### First command: `> output.txt 2>&1`
+
+Step 1: `> output.txt` sets stdout to the file.
+
+Step 2: `2>&1` sets stderr to wherever stdout currently goes, which is the file.
+
+Both end up in the file.
+
+### Second command: `2>&1 > output.txt`
+
+Step 1: `2>&1` sets stderr to wherever stdout currently goes. At this point, stdout still points to the terminal.
+
+So stderr now points to the terminal.
+
+Step 2: `> output.txt` sets stdout to the file.
+
+Final result: stdout goes to `output.txt`, stderr goes to the terminal.
+
+Only stdout goes to the file. stderr still goes to the terminal because it was duplicated before stdout was redirected.
+
+This is a subtle but important shell concept. Redirections are evaluated sequentially, and each one operates on the current state of the file descriptor table, not some future state.
+
+---
+
+## /dev/null
+
+`/dev/null` is a special device that throws away whatever you write to it. It is sometimes called the "bit bucket." Reading from it immediately returns end-of-file.
+
+### Discarding stderr
+
+```bash
+command 2>/dev/null
+```
+
+This runs the command and discards all error output. stderr is sent to `/dev/null`, where it vanishes.
+
+The command might still fail. You are simply throwing away the error message.
+
+### Discarding stdout
+
+```bash
+command >/dev/null
+```
+
+This discards normal output but lets errors through. stdout goes to `/dev/null` and is discarded, while stderr still goes to the terminal.
+
+### Discarding both
+
+```bash
+command >/dev/null 2>&1
+```
+
+This discards everything. Both stdout and stderr end up in `/dev/null`.
+
+---
+
+## Appending with >>
+
+The `>` operator overwrites the file every time. The `>>` operator appends to the file instead.
+
+```bash
+command >> file.txt
+```
+
+This adds stdout to the end of `file.txt` without erasing what was already there.
+
+Similarly:
+
+```bash
+command 2>> errors.txt
+```
+
+Appends stderr to `errors.txt`.
+
+This is essential for log files where you want to accumulate output over time rather than lose previous entries.
+
+---
+
+## Pipes
+
+The pipe operator `|` is one of the most important Unix concepts.
+
+```bash
+ps aux | grep 'yes'
+```
+
+Without a pipe, `ps aux` writes to stdout, which goes to the terminal: **ps aux → stdout → terminal**.
+
+When you use `|`, the shell creates a **pipe**, which is a kernel-managed buffer that connects the stdout of one process to the stdin of another. The flow becomes: **ps aux → stdout → pipe → stdin → grep yes → stdout → terminal**.
+
+### The Fundamental Rule
+
+```bash
+A | B
+```
+
+means: A's stdout is connected to B's stdin.
+
+`A` writes its output into the pipe. `B` reads its input from the pipe. `B` has no idea that its input came from another program. It simply reads from stdin as if it were reading from a keyboard or a file.
+
+---
+
+## Pipes and stderr
+
+Pipes only connect stdout to stdin by default. stderr is not affected.
+
+```bash
+A | B
+```
+
+In this setup, A's stdout flows into B's stdin, but A's stderr still goes directly to the terminal. If A produces errors, those errors still appear on your terminal. They do not enter B.
+
+To also send stderr through the pipe, merge it into stdout first:
+
+```bash
+A 2>&1 | B
+```
+
+Now both A's stdout and A's stderr flow into B's stdin.
+
+This is useful when you want another program to process everything, including errors.
+
+---
+
+## Chaining Multiple Pipes
+
+Pipes can be chained. Each program in the chain does one small job and passes its output to the next:
+
+```bash
+cat file.txt | grep hello | sort | uniq
+```
+
+The data flows through the chain: `cat` reads the file and sends its contents to `grep`. `grep` filters for lines containing "hello" and sends matches to `sort`. `sort` orders the lines alphabetically and sends them to `uniq`. `uniq` removes consecutive duplicates and writes the final result to the terminal.
+
+Each program reads from stdin, does its work, and writes to stdout. The shell wires them together. This is the Unix philosophy in action: small, focused tools composed together to accomplish complex tasks.
+
+---
+
+## Terminal is Not stdout
+
+This distinction is subtle but important. People often say "stdout means the terminal." That is not quite right.
+
+stdout is a file descriptor. It can currently point to the terminal, but it can just as easily point to a file, a pipe, `/dev/null`, a socket, or anything else.
+
+When you run:
+
+```bash
+ls
+```
+
+stdout points to the terminal.
+
+When you run:
+
+```bash
+ls > files.txt
+```
+
+stdout points to `files.txt`.
+
+When you run:
+
+```bash
+ls | grep txt
+```
+
+stdout points to a pipe.
+
+The program itself does not care. It just writes to FD 1. The shell decides where FD 1 points before the program starts.
+
+---
+
+## The Unix Philosophy Behind It
+
+A program simply says "write to FD 1." It does not need to know whether it is writing to a terminal, a file, or another program.
+
+The shell sets up the connections before the program starts running. By the time the program's code begins executing, FD 0, 1, and 2 are already wired up to whatever the shell decided.
+
+This is what makes composition possible. You can combine small programs:
+
+```bash
+cat file.txt | grep hello | sort | uniq
+```
+
+Each program does one job. None of them know about each other. The shell just connects their streams.
+
+---
+
+## The Process Mental Model
+
+Every process starts with three default file descriptors:
+
+- **FD 0 (stdin)** — the input channel, data flows in
+- **FD 1 (stdout)** — the normal output channel, data flows out
+- **FD 2 (stderr)** — the error output channel, data flows out
+
+The shell can reconnect any of them to any resource.
+
+---
+
+## Redirection Summary
+
+### stdin from a file
+
+```bash
+command < file
+```
+
+### stdout to a file (overwrite)
+
+```bash
+command > file
+```
+
+### stderr to a file
+
+```bash
+command 2> file
+```
+
+### stdout appended to a file
+
+```bash
+command >> file
+```
+
+### stderr appended to a file
+
+```bash
+command 2>> file
+```
+
+### Both stdout and stderr to a file
+
+```bash
+command > file 2>&1
+```
+
+### Pipe stdout to another program
+
+```bash
+command1 | command2
+```
+
+---
+
+## Combining Everything
+
+Consider this command:
+
+```bash
+find / -name "*.txt" 2>/dev/null | grep "important" > results.txt
+```
+
+Here is what happens step by step.
+
+`find / -name "*.txt"` searches the entire filesystem for `.txt` files. It writes filenames to stdout and permission errors to stderr.
+
+`2>/dev/null` discards stderr. The permission errors silently disappear.
+
+`|` connects find's stdout to grep's stdin.
+
+`grep "important"` reads the incoming filenames and outputs only lines containing "important."
+
+`> results.txt` sends grep's stdout to the file `results.txt`.
+
+Tracing the full flow: find's stderr is sent to `/dev/null` and discarded. find's stdout flows through the pipe into grep's stdin. grep filters the data and writes matches to its stdout, which is redirected into `results.txt`.
+
+---
+
+## The Foundation
+
+If you internalize these three assignments:
+
+- **0** = stdin
+- **1** = stdout
+- **2** = stderr
+
+And these rules:
+
+`A | B` means A's stdout flows into B's stdin.
+
+`> file` means stdout goes to a file.
+
+`2> file` means stderr goes to a file.
+
+Then commands like these stop looking like random shell magic and become just connecting streams together:
+
+```bash
+ps aux | grep yes
+find . 2>/dev/null
+command > out.txt 2> err.txt
+command > /dev/null 2>&1
+cat file | grep something | sort
+```
+
+Every one of those is just wiring up file descriptors to different destinations.

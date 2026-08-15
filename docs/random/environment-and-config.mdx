@@ -1,0 +1,359 @@
+---
+title: Environment and Configuration
+description: Environment variables, shell startup files, .env files, secrets management, and the relationship between configuration and code
+---
+
+## Environment Variables Revisited
+
+The Shell Fundamentals document covered the mechanics of environment variables: what they are, how `export` works, and how `PATH` is searched. This document goes deeper into the configuration side: how programs use environment variables, how your shell initializes them, and how you should manage configuration in real projects.
+
+The core idea is simple. A program should not contain its own configuration. Instead, the environment it runs in should provide that configuration. This is the principle behind environment variables.
+
+---
+
+## Shell Variables vs Environment Variables
+
+This distinction is worth reinforcing because it causes real confusion.
+
+A **shell variable** exists only inside the current shell process. It is not passed to any child process.
+
+```bash
+DB_HOST="localhost"
+node server.js
+```
+
+In this example, `server.js` cannot see `DB_HOST`. The variable lives and dies inside the shell. If `server.js` calls `process.env.DB_HOST`, it gets `undefined`.
+
+An **environment variable** is part of the process's environment and is inherited by every child process the shell creates.
+
+```bash
+export DB_HOST="localhost"
+node server.js
+```
+
+Now `server.js` can see `DB_HOST` because `export` placed it into the environment. When the shell forked a child process to run `node`, that child inherited a copy of the environment, which includes `DB_HOST`.
+
+### The Inline Syntax
+
+You can set an environment variable for a single command without affecting the current shell:
+
+```bash
+DB_HOST="localhost" node server.js
+```
+
+This sets `DB_HOST` in the environment of `node server.js` only. After the command finishes, `DB_HOST` does not exist in the shell. This is useful for one-off configuration changes.
+
+```bash
+NODE_ENV="production" npm run build
+DEBUG="true" ./my-program
+PORT=8080 python app.py
+```
+
+### Why PATH=... and export PATH=... Behave Differently
+
+Consider these two commands:
+
+```bash
+PATH="/my/custom/bin"
+```
+
+```bash
+export PATH="/my/custom/bin:$PATH"
+```
+
+The first command sets `PATH` as a shell variable. Since `PATH` is special (the shell uses it internally to find commands), the shell's own command lookup is affected. But `PATH` is no longer in the environment. If the shell starts a child process, that child does not inherit the new `PATH`. The child gets whatever `PATH` was in the environment before, or nothing at all.
+
+The second command exports `PATH` into the environment. The shell's own lookup uses the new value, and every child process also inherits it. The `:$PATH` at the end appends the existing `PATH`, so system directories are not lost.
+
+In practice, you almost always want `export` when modifying `PATH`. Without it, only the shell itself sees the change, and any program you run from that shell might break because it cannot find its own dependencies.
+
+---
+
+## Shell Startup Files
+
+When a new shell starts, it reads one or more configuration files. These files set environment variables, define aliases, configure the prompt, and run any setup commands. Understanding which files are read and when is essential for knowing where to put your configuration.
+
+### Interactive vs Non-Interactive Shells
+
+An **interactive shell** is one that reads commands from you at a prompt. When you open a terminal window, you get an interactive shell.
+
+A **non-interactive shell** runs a script and exits. When you run `bash script.sh`, the shell that executes the script is non-interactive.
+
+### Login vs Non-Login Shells
+
+A **login shell** is the first shell started when you log in to the system. On a remote server, the shell you get after SSH is a login shell. On macOS, every new terminal window opens a login shell (this is a macOS-specific behavior).
+
+A **non-login shell** is any shell started after the login shell. Opening a new terminal tab on most Linux desktops, or typing `bash` inside an existing shell, gives you a non-login shell.
+
+### Bash Startup Files
+
+Bash reads different files depending on the type of shell:
+
+**Login shell** reads these, in order:
+
+1. `/etc/profile` (system-wide, for all users)
+2. The **first one found** of: `~/.bash_profile`, `~/.bash_login`, `~/.profile`
+
+**Non-login interactive shell** reads:
+
+1. `~/.bashrc`
+
+This creates a common problem. If you put your `PATH` modifications in `~/.bashrc`, they are not applied in login shells. If you put them in `~/.bash_profile`, they are not applied in non-login shells.
+
+The standard solution is to put all your configuration in `~/.bashrc` and then source it from `~/.bash_profile`:
+
+```bash
+# ~/.bash_profile
+if [ -f ~/.bashrc ]; then
+    source ~/.bashrc
+fi
+```
+
+Now `~/.bashrc` runs in both cases.
+
+### Zsh Startup Files
+
+Zsh reads different files, in this order:
+
+1. `~/.zshenv` (always, for every zsh process including scripts)
+2. `~/.zprofile` (login shells only)
+3. `~/.zshrc` (interactive shells only)
+4. `~/.zlogin` (login shells only, after `.zshrc`)
+
+For most purposes, put your configuration in `~/.zshrc`. Since macOS treats every terminal window as a login shell, `.zshrc` is always read on macOS.
+
+### Where to Put What
+
+- **Environment variables that all programs need** (`PATH`, `EDITOR`, language settings): Put these in `~/.bashrc` or `~/.zshrc`
+- **Aliases and shell-specific settings** (prompt, completion, key bindings): Put these in `~/.bashrc` or `~/.zshrc`
+- **Environment variables needed by non-interactive scripts**: Put these in `~/.bash_profile` or `~/.zshenv`
+
+### The source Command
+
+The `source` command (or its shorthand `.`) executes a file in the current shell, without starting a child process. This is how startup files load other files, and how you apply changes without restarting the shell:
+
+```bash
+source ~/.zshrc
+# or equivalently:
+. ~/.zshrc
+```
+
+If you edit `~/.zshrc` and want the changes to take effect immediately, you source it. Without `source`, the changes only apply to new shells.
+
+---
+
+## .env Files
+
+A `.env` file is a plain text file that stores environment variables for a project. The name `.env` is a convention, not an operating system feature. The shell does not automatically read `.env` files. Applications or tools must explicitly load them.
+
+```
+# .env
+DATABASE_URL=postgres://localhost:5432/myapp
+API_KEY=sk-abc123def456
+PORT=3000
+NODE_ENV=development
+```
+
+### How .env Files Are Loaded
+
+Different languages and frameworks load `.env` files through libraries:
+
+In Node.js, the `dotenv` package is the most common:
+
+```javascript
+require('dotenv').config()
+// or in ES modules:
+// import 'dotenv/config'
+
+console.log(process.env.DATABASE_URL)
+// postgres://localhost:5432/myapp
+```
+
+The `dotenv` library reads the `.env` file, parses each line, and sets the values as environment variables in the current process.
+
+In Python, the `python-dotenv` package works similarly:
+
+```python
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+print(os.environ["DATABASE_URL"])
+```
+
+Some frameworks (like Next.js, Vite, and many others) have built-in `.env` file support and load them automatically during development.
+
+### .env File Rules
+
+- Each line is a `KEY=VALUE` pair
+- Lines starting with `#` are comments
+- Blank lines are ignored
+- Values can optionally be quoted: `KEY="value with spaces"`
+- There is no `export` keyword (though some tools accept it)
+- The file is not shell syntax, even though it looks similar
+
+### .env Files and Version Control
+
+The `.env` file itself should **never** be committed to version control because it typically contains secrets (API keys, database passwords, tokens). Add it to `.gitignore`:
+
+```
+# .gitignore
+.env
+.env.local
+.env.*.local
+```
+
+Instead, commit a `.env.example` file that shows the required variables without real values:
+
+```
+# .env.example
+DATABASE_URL=
+API_KEY=
+PORT=3000
+NODE_ENV=development
+```
+
+This documents what variables the project needs without exposing secrets.
+
+### Multiple .env Files
+
+Many frameworks support multiple `.env` files for different environments:
+
+```
+.env                # shared defaults, loaded in all environments
+.env.local          # local overrides, not committed
+.env.development    # development-specific
+.env.production     # production-specific
+.env.test           # test-specific
+```
+
+The loading order and priority vary by framework. Check your framework's documentation for specifics.
+
+---
+
+## The Inherited Environment
+
+Every process inherits a copy of its parent's environment at the moment of creation. This inheritance is one-directional and one-time.
+
+### What "Copy" Means
+
+```bash
+export MY_VAR="original"
+bash                        # start a child shell
+echo $MY_VAR                # "original" — inherited from parent
+export MY_VAR="modified"    # change it in the child
+exit                        # back to parent
+echo $MY_VAR                # "original" — parent is unaffected
+```
+
+The child got a copy. Changes in the child do not propagate back to the parent. Changes in the parent after the fork do not reach the child.
+
+This explains several common confusions:
+
+- A script cannot modify the calling shell's environment (unless you `source` it)
+- Setting a variable in one terminal does not affect other terminals
+- A Docker container's environment is set at container creation time and does not change if the host's environment changes
+
+### Viewing the Full Environment
+
+```bash
+env
+# prints all environment variables in the current process
+
+env | sort
+# sorted for easier reading
+
+env | grep -i path
+# find PATH-related variables
+```
+
+---
+
+## Secrets Management
+
+Environment variables are the standard way to provide secrets (API keys, database passwords, tokens) to applications. This approach follows the **Twelve-Factor App** methodology, which states that configuration should be stored in the environment.
+
+### Why Not Hardcode Secrets in Code
+
+Hardcoding secrets in source code is dangerous because:
+
+- Source code is stored in version control. Anyone with repository access can see the secrets.
+- Source code is often shared, forked, or made public. Secrets accidentally pushed to a public repository are immediately compromised.
+- Changing a secret requires changing code and redeploying. With environment variables, you just change the variable.
+
+```javascript
+// WRONG: secret in code
+const apiKey = "sk-abc123def456";
+
+// RIGHT: secret from environment
+const apiKey = process.env.API_KEY;
+```
+
+### Local Development
+
+During local development, use `.env` files to store secrets. These files stay on your machine and are excluded from version control.
+
+### Production Environments
+
+In production, secrets should come from a dedicated secrets management service, not from `.env` files on the server:
+
+- **Cloud provider secrets managers**: AWS Secrets Manager, Google Secret Manager, Azure Key Vault
+- **Container orchestration**: Kubernetes Secrets, Docker Secrets
+- **CI/CD platforms**: GitHub Actions secrets, GitLab CI variables
+- **Third-party tools**: HashiCorp Vault, Doppler
+
+These tools inject secrets into the environment at runtime without storing them in files on disk.
+
+### The Principle
+
+Configuration that changes between environments (development, staging, production) should be in the environment. Configuration that is inherent to the application (internal constants, algorithm parameters) should be in code.
+
+A database URL changes between environments. It belongs in the environment. The maximum number of retries for a failed request is an application design decision. It can live in code or in a config file committed to the repository.
+
+---
+
+## Configuration vs Code
+
+This is a design principle, not a technical mechanism. Understanding the boundary between configuration and code prevents a wide class of deployment problems.
+
+### What Belongs in Configuration
+
+- Database connection strings
+- API keys and secrets
+- Service URLs (the address of your payment provider, email service, etc.)
+- Feature flags
+- Port numbers
+- Log levels
+- Anything that differs between deployment environments
+
+### What Belongs in Code
+
+- Business logic
+- Data validation rules
+- Algorithm implementations
+- Internal constants that do not change between environments
+- Default values (with environment overrides)
+
+### The Pattern
+
+A well-structured application reads its configuration at startup, validates it, and fails immediately if required values are missing:
+
+```javascript
+const config = {
+    port: parseInt(process.env.PORT) || 3000,
+    databaseUrl: process.env.DATABASE_URL,
+    apiKey: process.env.API_KEY,
+};
+
+if (!config.databaseUrl) {
+    console.error("DATABASE_URL is required");
+    process.exit(1);
+}
+
+if (!config.apiKey) {
+    console.error("API_KEY is required");
+    process.exit(1);
+}
+```
+
+This pattern makes it immediately obvious when a deployment is misconfigured, rather than failing silently at runtime when the missing value is first needed.

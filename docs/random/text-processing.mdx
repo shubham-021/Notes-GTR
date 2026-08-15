@@ -1,0 +1,662 @@
+---
+title: Text Processing
+description: Composing Unix text-processing tools together, with deep coverage of tr, jq, and the philosophy of pipelines
+---
+
+## The Composition Philosophy
+
+Unix text-processing tools are designed to be composed. Each tool does one small thing well. You connect them with pipes to build complex data transformations from simple parts.
+
+The pattern is always the same: a program reads from stdin, transforms the data, and writes to stdout. The next program in the pipeline reads that output as its input. No tool needs to know about any other tool. They communicate through streams of text.
+
+```bash
+cat access.log | grep "404" | cut -d' ' -f1 | sort | uniq -c | sort -rn | head -10
+```
+
+This pipeline:
+1. Reads a web server log
+2. Filters for 404 error lines
+3. Extracts the first field (the IP address)
+4. Sorts the IP addresses
+5. Counts how many times each appears
+6. Sorts by count in descending order
+7. Shows the top 10
+
+Seven tools, each doing one thing, producing a "top 10 IP addresses causing 404 errors" report. No programming language needed.
+
+---
+
+## grep — Filter Lines
+
+`grep` prints lines that match a pattern. It is the most-used text processing tool.
+
+The basic command reference for grep is in the Linux Commands document. This section covers the patterns and techniques that make grep powerful in pipelines.
+
+### Regular Expressions in grep
+
+By default, grep uses **basic regular expressions**. Use `-E` for **extended regular expressions** (or use `egrep`):
+
+```bash
+# Basic: match lines containing "error" or "Error" or "ERROR"
+grep -i "error" logfile.txt
+
+# Extended: match "error" OR "warning"
+grep -E "error|warning" logfile.txt
+
+# Match lines starting with a date pattern
+grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}" logfile.txt
+
+# Match lines ending with a port number
+grep -E ":[0-9]+$" connections.txt
+```
+
+### grep in Pipelines
+
+grep is almost always used with a pipe. It acts as a filter, passing through only the lines you care about:
+
+```bash
+ps aux | grep "node"             # find node processes
+env | grep -i "path"             # find PATH-related env vars
+docker ps | grep "running"       # find running containers
+git log --oneline | grep "fix"   # find fix commits
+```
+
+### Inverting Matches
+
+`-v` inverts the match, showing lines that do NOT contain the pattern:
+
+```bash
+ps aux | grep "node" | grep -v "grep"
+# find node processes, excluding the grep command itself
+
+cat /etc/passwd | grep -v "^#"
+# show all lines that are not comments
+```
+
+### Counting Instead of Printing
+
+```bash
+grep -c "error" logfile.txt
+# prints just the count, not the matching lines
+
+git log --oneline | grep -c "feat:"
+# count how many feature commits
+```
+
+---
+
+## cut — Extract Fields
+
+`cut` extracts specific columns or character positions from each line.
+
+```bash
+# Extract the first field from a colon-delimited file
+cut -d':' -f1 /etc/passwd
+# root
+# alice
+# bob
+
+# Extract fields 1 and 3
+cut -d':' -f1,3 /etc/passwd
+# root:0
+# alice:1000
+# bob:1001
+
+# Extract characters 1-10 from each line
+cut -c1-10 file.txt
+```
+
+`cut` is fast and simple but limited. It cannot handle variable-width delimiters (multiple spaces) or quoted fields. For those cases, use `awk`.
+
+---
+
+## sort — Order Lines
+
+`sort` orders lines alphabetically by default.
+
+```bash
+sort names.txt                    # alphabetical
+sort -r names.txt                 # reverse alphabetical
+sort -n numbers.txt               # numeric sort
+sort -t',' -k2 data.csv          # sort CSV by second column
+sort -t',' -k2 -n data.csv       # sort CSV by second column, numerically
+sort -u names.txt                 # sort and remove duplicates
+sort -rn counts.txt               # numeric, descending (largest first)
+```
+
+The `-k` flag specifies which field to sort by. `-t` specifies the field delimiter.
+
+### Sorting by Multiple Keys
+
+```bash
+# Sort by department (field 2), then by salary (field 3, numerically, descending)
+sort -t',' -k2,2 -k3,3 -rn employees.csv
+```
+
+---
+
+## uniq — Remove Duplicates
+
+`uniq` removes **consecutive** duplicate lines. This is a critical detail: the input must be sorted first, otherwise non-adjacent duplicates are not detected.
+
+```bash
+# WRONG: does not remove all duplicates
+cat names.txt | uniq
+
+# RIGHT: sort first, then deduplicate
+sort names.txt | uniq
+```
+
+### Counting Occurrences
+
+```bash
+sort names.txt | uniq -c
+#       3 Alice
+#       1 Bob
+#       5 Carol
+```
+
+### Show Only Duplicates
+
+```bash
+sort names.txt | uniq -d
+# shows only lines that appear more than once
+```
+
+### Show Only Unique Lines
+
+```bash
+sort names.txt | uniq -u
+# shows only lines that appear exactly once
+```
+
+---
+
+## head and tail — View Start or End
+
+```bash
+head -n 5 file.txt        # first 5 lines
+tail -n 5 file.txt        # last 5 lines
+tail -f logfile.txt       # follow the file (watch for new lines in real time)
+```
+
+`tail -f` is one of the most useful commands for monitoring. It keeps the file open and prints new lines as they are appended:
+
+```bash
+tail -f /var/log/nginx/access.log
+# watches the log in real time
+
+tail -f app.log | grep "ERROR"
+# watches the log but only shows error lines
+```
+
+### head and tail in Pipelines
+
+```bash
+# Show the 5 largest files in the current directory
+du -sh * | sort -rh | head -5
+
+# Show the last 3 commits
+git log --oneline | head -3
+
+# Skip the header line and show the rest
+tail -n +2 data.csv
+# +2 means "starting from line 2"
+```
+
+---
+
+## wc — Count Things
+
+```bash
+wc file.txt               # lines, words, characters
+wc -l file.txt             # lines only
+wc -w file.txt             # words only
+wc -c file.txt             # bytes only
+wc -m file.txt             # characters only (different from bytes for multi-byte characters)
+```
+
+In pipelines, `wc -l` is the most common:
+
+```bash
+find . -name "*.js" | wc -l
+# count JavaScript files
+
+grep -r "TODO" src/ | wc -l
+# count TODO comments across the codebase
+
+ps aux | wc -l
+# count running processes (subtract 1 for the header line)
+```
+
+---
+
+## tr — Translate Characters
+
+`tr` (translate) replaces or deletes individual characters. It operates on characters, not strings or patterns. It reads from stdin and writes to stdout.
+
+### Replacing Characters
+
+```bash
+echo "hello world" | tr 'a-z' 'A-Z'
+# HELLO WORLD
+
+echo "hello world" | tr ' ' '_'
+# hello_world
+
+echo "2024-01-15" | tr '-' '/'
+# 2024/01/15
+```
+
+The first argument is the set of characters to replace, and the second argument is the set of replacement characters. Each character in the first set is replaced by the corresponding character in the second set.
+
+### Deleting Characters
+
+The `-d` flag deletes characters instead of replacing them:
+
+```bash
+echo "hello 123 world 456" | tr -d '0-9'
+# hello  world
+
+echo "  hello  " | tr -d ' '
+# hello
+
+echo "line1\nline2" | tr -d '\n'
+# line1line2
+```
+
+### Squeezing Repeated Characters
+
+The `-s` flag squeezes consecutive repeated characters into a single character:
+
+```bash
+echo "hello    world" | tr -s ' '
+# hello world
+
+echo "aabbccdd" | tr -s 'a-z'
+# abcd
+```
+
+### Complement
+
+The `-c` flag uses the complement of the first set (everything NOT in the set):
+
+```bash
+echo "hello 123 world" | tr -cd '0-9\n'
+# 123
+# keeps only digits and newlines, deletes everything else
+```
+
+### Practical Uses
+
+Removing carriage returns from Windows-format files:
+
+```bash
+tr -d '\r' < windows_file.txt > unix_file.txt
+```
+
+Generating simple random strings:
+
+```bash
+cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32
+# generates a 32-character random alphanumeric string
+```
+
+Converting newlines to spaces (turning a multi-line list into a single line):
+
+```bash
+cat names.txt | tr '\n' ' '
+```
+
+---
+
+## sed — Stream Editor
+
+`sed` transforms text by applying editing commands to each line. The basic reference is in the Linux Commands document. This section covers the patterns used in real pipelines.
+
+### Substitution in Pipelines
+
+```bash
+# Replace "localhost" with the actual hostname in a config template
+cat config.template | sed "s/localhost/$HOSTNAME/g"
+
+# Remove trailing whitespace from every line
+sed 's/[[:space:]]*$//' file.txt
+
+# Remove blank lines
+sed '/^$/d' file.txt
+
+# Add a prefix to every line
+sed 's/^/PREFIX: /' file.txt
+
+# Extract the version number from a package.json (crude but quick)
+grep '"version"' package.json | sed 's/.*"\([0-9.]*\)".*/\1/'
+```
+
+### Multiple Substitutions
+
+```bash
+# Apply multiple edits with -e
+sed -e 's/foo/bar/g' -e 's/baz/qux/g' file.txt
+```
+
+### sed with Addresses
+
+You can restrict which lines sed operates on:
+
+```bash
+sed '1d' file.txt               # delete line 1 (remove header)
+sed '1,5d' file.txt             # delete lines 1 through 5
+sed '/^#/d' file.txt            # delete lines starting with #
+sed '10s/old/new/' file.txt     # substitute only on line 10
+```
+
+---
+
+## awk — Pattern Processing
+
+`awk` is the most powerful of the standard text-processing tools. It is a small programming language designed for processing structured text. The basic reference is in the Linux Commands document. This section focuses on practical pipeline patterns.
+
+### Field-Based Processing
+
+`awk` splits each line into fields (by whitespace by default). Fields are accessed as `$1`, `$2`, etc. `$0` is the entire line.
+
+```bash
+# Print the second column of ps output
+ps aux | awk '{print $2}'
+
+# Print username and command from ps
+ps aux | awk '{print $1, $11}'
+
+# Print lines where the third field is greater than 50
+awk '$3 > 50' data.txt
+```
+
+### Custom Delimiters
+
+```bash
+# Parse /etc/passwd (colon-delimited)
+awk -F':' '{print $1, $3}' /etc/passwd
+# root 0
+# alice 1000
+
+# Parse CSV
+awk -F',' '{print $1, $3}' data.csv
+```
+
+### Conditions and Actions
+
+```bash
+# Print lines where the status field (column 3) is "ERROR"
+awk '$3 == "ERROR" {print $0}' logfile.txt
+
+# Sum a column of numbers
+awk '{sum += $1} END {print "Total:", sum}' numbers.txt
+
+# Count lines matching a pattern
+awk '/error/ {count++} END {print count}' logfile.txt
+
+# Print lines longer than 80 characters
+awk 'length > 80' file.txt
+```
+
+### BEGIN and END Blocks
+
+```bash
+# Add a header and footer
+awk 'BEGIN {print "=== Report ==="} {print $0} END {print "=== End ==="}' data.txt
+```
+
+### Practical Examples
+
+```bash
+# Calculate average response time from a log
+awk '{sum += $NF; count++} END {print "Average:", sum/count, "ms"}' response_times.log
+
+# Find the process using the most memory
+ps aux | awk 'NR>1 {print $4, $11}' | sort -rn | head -1
+# NR>1 skips the header line
+
+# Sum file sizes in a directory
+ls -l | awk '{sum += $5} END {print "Total:", sum, "bytes"}'
+```
+
+---
+
+## xargs — Build Commands from Input
+
+`xargs` reads items from stdin and executes a command with those items as arguments. It converts a stream of data into command arguments.
+
+```bash
+# Delete all .log files found by find
+find . -name "*.log" | xargs rm
+
+# Same, but handles filenames with spaces
+find . -name "*.log" -print0 | xargs -0 rm
+
+# Run a command for each input item
+cat urls.txt | xargs -I {} curl -s {}
+
+# Run in parallel (4 processes at a time)
+find . -name "*.png" | xargs -P 4 -I {} convert {} -resize 50% {}
+```
+
+### The -I {} Placeholder
+
+`-I {}` tells xargs to replace `{}` with each input item:
+
+```bash
+cat servers.txt | xargs -I {} ssh {} "uptime"
+# runs ssh <server> uptime for each server in the file
+
+find . -name "*.bak" | xargs -I {} mv {} {}.old
+# renames each .bak file to .bak.old
+```
+
+### Limiting Arguments Per Command
+
+```bash
+echo "a b c d e f" | xargs -n 2 echo
+# echo a b
+# echo c d
+# echo e f
+# runs echo with at most 2 arguments each time
+```
+
+---
+
+## jq — JSON Processing
+
+`jq` is a command-line JSON processor. It is not a traditional Unix tool (it is not part of the POSIX standard), but it has become essential for modern development because APIs, configuration files, and data interchange all use JSON.
+
+`jq` reads JSON from stdin, applies a filter expression, and writes the result to stdout.
+
+### Basic Usage
+
+```bash
+# Pretty-print JSON
+echo '{"name":"Alice","age":30}' | jq '.'
+
+# Extract a single field
+echo '{"name":"Alice","age":30}' | jq '.name'
+# "Alice"
+
+# Extract without quotes (raw output)
+echo '{"name":"Alice","age":30}' | jq -r '.name'
+# Alice
+```
+
+The `-r` flag outputs raw strings without JSON quoting. You almost always want `-r` when the output is going into another command or variable.
+
+### Navigating Nested Objects
+
+```bash
+echo '{"user":{"name":"Alice","address":{"city":"Portland"}}}' | jq '.user.address.city'
+# "Portland"
+```
+
+### Working with Arrays
+
+```bash
+echo '[1, 2, 3, 4, 5]' | jq '.[]'
+# 1
+# 2
+# 3
+# 4
+# 5
+
+# Get a specific element (0-indexed)
+echo '["a", "b", "c"]' | jq '.[1]'
+# "b"
+
+# Get the length
+echo '[1, 2, 3]' | jq 'length'
+# 3
+```
+
+### Filtering Arrays of Objects
+
+```bash
+echo '[{"name":"Alice","role":"admin"},{"name":"Bob","role":"user"},{"name":"Carol","role":"admin"}]' \
+  | jq '.[] | select(.role == "admin") | .name'
+# "Alice"
+# "Carol"
+```
+
+The `.[]` iterates over array elements. `select(.role == "admin")` filters. `.name` extracts the name field.
+
+### Constructing New Objects
+
+```bash
+echo '{"first":"Alice","last":"Smith","age":30}' \
+  | jq '{fullName: (.first + " " + .last), age: .age}'
+# {
+#   "fullName": "Alice Smith",
+#   "age": 30
+# }
+```
+
+### Practical API Examples
+
+```bash
+# Get names of all GitHub repos for a user
+curl -s "https://api.github.com/users/octocat/repos" | jq -r '.[].name'
+
+# Get the latest release version
+curl -s "https://api.github.com/repos/owner/repo/releases/latest" | jq -r '.tag_name'
+
+# Extract specific fields and format as CSV
+curl -s "https://api.example.com/users" \
+  | jq -r '.users[] | [.id, .name, .email] | @csv'
+
+# Count items matching a condition
+curl -s "https://api.example.com/issues" \
+  | jq '[.[] | select(.state == "open")] | length'
+```
+
+### jq in Pipelines
+
+`jq` composes with other Unix tools:
+
+```bash
+# Find all unique error codes from an API response
+curl -s "https://api.example.com/logs" \
+  | jq -r '.errors[].code' \
+  | sort \
+  | uniq -c \
+  | sort -rn
+
+# Extract IDs and pass them to another command
+curl -s "https://api.example.com/users" \
+  | jq -r '.[].id' \
+  | xargs -I {} curl -s "https://api.example.com/users/{}/profile"
+```
+
+### Reading JSON Files
+
+```bash
+# Read a value from package.json
+jq -r '.version' package.json
+
+# List all dependencies
+jq -r '.dependencies | keys[]' package.json
+
+# Check if a key exists
+jq 'has("scripts")' package.json
+
+# Modify a value (output to stdout, does not modify the file)
+jq '.version = "2.0.0"' package.json
+
+# Modify a file in place (write to temp file, then replace)
+jq '.version = "2.0.0"' package.json > tmp.json && mv tmp.json package.json
+```
+
+---
+
+## Common Pipeline Patterns
+
+### Frequency Analysis
+
+Find the most common items in a dataset:
+
+```bash
+# Most common words in a file
+cat file.txt | tr -s ' ' '\n' | tr 'A-Z' 'a-z' | sort | uniq -c | sort -rn | head -20
+
+# Most common HTTP status codes in an access log
+awk '{print $9}' access.log | sort | uniq -c | sort -rn
+
+# Most common file extensions in a directory tree
+find . -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -10
+```
+
+### Data Extraction
+
+Pull specific pieces out of structured text:
+
+```bash
+# Extract all email addresses from a file
+grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' file.txt
+
+# Extract all URLs from a file
+grep -oE 'https?://[^ ]+' file.txt
+
+# Extract all IP addresses from a log
+grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' logfile.txt | sort -u
+```
+
+### Transformation
+
+Reshape data from one format to another:
+
+```bash
+# Convert a CSV to TSV
+tr ',' '\t' < data.csv
+
+# Remove the first line (header) from a CSV
+tail -n +2 data.csv
+
+# Add line numbers
+cat -n file.txt
+# or
+nl file.txt
+
+# Reverse the order of lines
+tac file.txt
+# (tac is cat backwards)
+```
+
+### Comparison and Difference
+
+```bash
+# Lines that are in file1 but not in file2
+comm -23 <(sort file1.txt) <(sort file2.txt)
+
+# Lines that are in both files
+comm -12 <(sort file1.txt) <(sort file2.txt)
+
+# Side-by-side diff
+diff --side-by-side file1.txt file2.txt
+```
+
+The `<(command)` syntax is **process substitution**. It runs the command and makes its output appear as a file. This lets tools that expect file arguments work with command output.

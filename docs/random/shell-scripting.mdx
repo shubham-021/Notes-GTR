@@ -1,0 +1,750 @@
+---
+title: Shell Scripting
+description: Writing shell scripts from variables and arguments to conditionals, loops, functions, traps, and defensive scripting practices
+---
+
+## What is a Shell Script
+
+A shell script is a text file containing a sequence of shell commands. Instead of typing commands one at a time into the terminal, you write them in a file and execute the file. The shell reads the file line by line and runs each command as if you had typed it.
+
+Shell scripts automate repetitive tasks, orchestrate deployments, process data, and glue other programs together. You do not need to become a shell scripting expert, but being able to write and read basic scripts will save you significant time.
+
+```bash
+#!/bin/bash
+
+echo "Starting deployment..."
+git pull origin main
+npm install
+npm run build
+echo "Deployment complete."
+```
+
+Save this as `deploy.sh`, make it executable with `chmod +x deploy.sh`, and run it with `./deploy.sh`. Five commands executed with one command.
+
+---
+
+## The Shebang
+
+The first line of a script should be the **shebang** (also called hashbang):
+
+```bash
+#!/bin/bash
+```
+
+This tells the kernel which interpreter to use when executing the file. Without it, the kernel does not know how to run the file. When you execute `./script.sh`, the kernel reads the first line, sees `#!/bin/bash`, and effectively runs `/bin/bash ./script.sh`.
+
+Common shebangs:
+
+```bash
+#!/bin/bash          # use bash
+#!/bin/sh            # use the system's default POSIX shell (more portable)
+#!/usr/bin/env bash  # find bash via PATH (most portable)
+#!/usr/bin/env python3
+#!/usr/bin/env node
+```
+
+The `#!/usr/bin/env bash` form is preferred over `#!/bin/bash` because `env` searches `PATH` to find the interpreter. On some systems, `bash` might not be at `/bin/bash` (for example, on NixOS or when using a custom installation). Using `env` makes the script work regardless of the exact installation path.
+
+---
+
+## Variables
+
+Variables in shell scripts do not need a type declaration. They are all strings by default.
+
+### Assignment
+
+There must be **no spaces** around the `=` sign. This is a common mistake.
+
+```bash
+# CORRECT
+name="Alice"
+count=42
+
+# WRONG — the shell interprets this as a command called "name" with arguments "=" and "Alice"
+name = "Alice"
+```
+
+### Reading Variables
+
+Prefix the variable name with `$` to read its value. Curly braces are optional but recommended when the variable name is adjacent to other text:
+
+```bash
+name="Alice"
+echo "Hello $name"
+# Hello Alice
+
+echo "Hello ${name}!"
+# Hello Alice!
+
+# Without braces, the shell tries to find a variable called "name!"
+echo "Hello $name!"
+# Hello !      (if $name! is not set)
+```
+
+### Read-Only Variables
+
+```bash
+readonly PI=3.14159
+PI=3.0
+# bash: PI: readonly variable
+```
+
+### Variable Scope
+
+Variables in a script are global by default. Any variable set anywhere in the script is visible everywhere in the script after that point. Inside functions, you can use `local` to create function-scoped variables (covered in the Functions section).
+
+---
+
+## Script Arguments
+
+When you run a script with arguments, those arguments are accessible through special variables:
+
+```bash
+./deploy.sh production verbose
+```
+
+Inside the script:
+
+```bash
+#!/bin/bash
+
+echo "Script name: $0"    # ./deploy.sh
+echo "First arg: $1"      # production
+echo "Second arg: $2"     # verbose
+echo "All args: $@"        # production verbose
+echo "Number of args: $#"  # 2
+```
+
+### The Special Variables
+
+- `$0` is the name of the script itself
+- `$1`, `$2`, `$3`, ... are the positional arguments (first, second, third, ...)
+- `$@` is all arguments as separate strings (respects quoting)
+- `$*` is all arguments as a single string (rarely what you want)
+- `$#` is the number of arguments
+
+### $@ vs $*
+
+The difference matters when arguments contain spaces:
+
+```bash
+./script.sh "hello world" "foo bar"
+```
+
+Inside the script:
+
+```bash
+# Using $@ with quotes — preserves each argument as-is
+for arg in "$@"; do
+    echo "arg: $arg"
+done
+# arg: hello world
+# arg: foo bar
+
+# Using $* with quotes — merges all arguments into one string
+for arg in "$*"; do
+    echo "arg: $arg"
+done
+# arg: hello world foo bar
+```
+
+Always use `"$@"` (with double quotes) when iterating over arguments. It preserves the original argument boundaries.
+
+### Checking Arguments
+
+A common pattern is to validate that the required number of arguments were provided:
+
+```bash
+#!/bin/bash
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <environment>"
+    exit 1
+fi
+
+environment=$1
+echo "Deploying to $environment"
+```
+
+---
+
+## Exit Codes
+
+Every command in a script produces an exit code. The script itself also produces an exit code when it finishes.
+
+Use `exit` to set the script's exit code explicitly:
+
+```bash
+#!/bin/bash
+
+if [ ! -f "$1" ]; then
+    echo "File not found: $1"
+    exit 1
+fi
+
+echo "Processing $1..."
+exit 0
+```
+
+If a script ends without an explicit `exit`, its exit code is the exit code of the last command that ran.
+
+The special variable `$?` holds the exit code of the most recently executed command:
+
+```bash
+grep "error" logfile.txt
+if [ $? -eq 0 ]; then
+    echo "Errors found"
+fi
+```
+
+This is functionally equivalent to:
+
+```bash
+if grep "error" logfile.txt; then
+    echo "Errors found"
+fi
+```
+
+The second form is more idiomatic. The `if` statement directly uses the exit code of `grep`.
+
+---
+
+## Conditionals
+
+### The if Statement
+
+```bash
+if [ condition ]; then
+    # commands
+elif [ other_condition ]; then
+    # commands
+else
+    # commands
+fi
+```
+
+### The Test Command
+
+The `[ condition ]` syntax is actually a command called `test`. The `[` is literally a program (or a shell builtin) and `]` is its last argument. This is why spaces around `[` and `]` are mandatory.
+
+```bash
+# These are equivalent:
+[ -f "file.txt" ]
+test -f "file.txt"
+```
+
+### File Tests
+
+```bash
+[ -f "$file" ]     # true if file exists and is a regular file
+[ -d "$dir" ]      # true if directory exists
+[ -e "$path" ]     # true if path exists (file, directory, link, etc.)
+[ -r "$file" ]     # true if file is readable
+[ -w "$file" ]     # true if file is writable
+[ -x "$file" ]     # true if file is executable
+[ -s "$file" ]     # true if file exists and is not empty
+[ -L "$file" ]     # true if file is a symbolic link
+```
+
+### String Tests
+
+```bash
+[ -z "$var" ]          # true if string is empty (zero length)
+[ -n "$var" ]          # true if string is not empty
+[ "$a" = "$b" ]        # true if strings are equal
+[ "$a" != "$b" ]       # true if strings are not equal
+```
+
+Note: use a single `=` for string comparison in `[ ]`. This is not assignment.
+
+### Numeric Tests
+
+```bash
+[ "$a" -eq "$b" ]     # equal
+[ "$a" -ne "$b" ]     # not equal
+[ "$a" -lt "$b" ]     # less than
+[ "$a" -le "$b" ]     # less than or equal
+[ "$a" -gt "$b" ]     # greater than
+[ "$a" -ge "$b" ]     # greater than or equal
+```
+
+### Combining Conditions
+
+```bash
+[ condition1 ] && [ condition2 ]   # AND
+[ condition1 ] || [ condition2 ]   # OR
+! [ condition ]                     # NOT
+```
+
+### The Double Bracket [[ ]]
+
+Bash (not POSIX sh) provides `[[ ]]` which is more powerful and less error-prone:
+
+```bash
+[[ -f "$file" && -r "$file" ]]     # AND inside the brackets
+[[ "$name" == "Alice" ]]            # pattern matching with ==
+[[ "$name" =~ ^[A-Z] ]]            # regex matching with =~
+```
+
+`[[ ]]` is a bash keyword, not a command, so it handles edge cases better (empty variables, special characters). If you are writing specifically for bash (not POSIX sh), prefer `[[ ]]`.
+
+### Practical Example
+
+```bash
+#!/bin/bash
+
+if [ -f "$1" ]; then
+    echo "File exists"
+else
+    echo "File doesn't exist"
+fi
+```
+
+```bash
+#!/bin/bash
+
+if [[ $# -lt 2 ]]; then
+    echo "Usage: $0 <source> <destination>"
+    exit 1
+fi
+
+src="$1"
+dest="$2"
+
+if [[ ! -f "$src" ]]; then
+    echo "Source file does not exist: $src"
+    exit 1
+fi
+
+if [[ -f "$dest" ]]; then
+    echo "Destination already exists: $dest"
+    echo "Overwrite? (y/n)"
+    read -r answer
+    if [[ "$answer" != "y" ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+fi
+
+cp "$src" "$dest"
+echo "Copied $src to $dest"
+```
+
+---
+
+## Loops
+
+### for Loop
+
+Iterating over a list of values:
+
+```bash
+for fruit in apple banana cherry; do
+    echo "I like $fruit"
+done
+```
+
+Iterating over files:
+
+```bash
+for file in *.txt; do
+    echo "Processing $file"
+    wc -l "$file"
+done
+```
+
+Iterating over command output:
+
+```bash
+for user in $(cat users.txt); do
+    echo "Creating account for $user"
+done
+```
+
+C-style for loop (bash only):
+
+```bash
+for ((i = 0; i < 10; i++)); do
+    echo "Iteration $i"
+done
+```
+
+Iterating over script arguments:
+
+```bash
+for arg in "$@"; do
+    echo "Argument: $arg"
+done
+```
+
+### while Loop
+
+```bash
+count=1
+while [ $count -le 5 ]; do
+    echo "Count: $count"
+    count=$((count + 1))
+done
+```
+
+Reading a file line by line:
+
+```bash
+while IFS= read -r line; do
+    echo "Line: $line"
+done < input.txt
+```
+
+The `IFS=` prevents leading/trailing whitespace from being trimmed. The `-r` flag prevents backslash interpretation. This is the correct way to read lines from a file in a shell script.
+
+Infinite loop (useful for watching or polling):
+
+```bash
+while true; do
+    echo "Checking server status..."
+    curl -s -o /dev/null -w "%{http_code}" http://localhost:3000
+    sleep 5
+done
+```
+
+### until Loop
+
+Runs until the condition becomes true (the opposite of `while`):
+
+```bash
+until [ -f /tmp/ready.flag ]; do
+    echo "Waiting for ready signal..."
+    sleep 1
+done
+echo "Ready!"
+```
+
+### break and continue
+
+```bash
+for i in 1 2 3 4 5; do
+    if [ $i -eq 3 ]; then
+        continue   # skip the rest of this iteration
+    fi
+    if [ $i -eq 5 ]; then
+        break      # exit the loop entirely
+    fi
+    echo "$i"
+done
+# prints: 1 2 4
+```
+
+---
+
+## Functions
+
+Functions group commands together under a name. They help organize scripts and avoid repeating code.
+
+```bash
+greet() {
+    echo "Hello, $1!"
+}
+
+greet "Alice"
+# Hello, Alice!
+
+greet "Bob"
+# Hello, Bob!
+```
+
+### Function Arguments
+
+Functions receive arguments the same way scripts do: through `$1`, `$2`, `$@`, and `$#`. Inside a function, these refer to the function's arguments, not the script's arguments.
+
+```bash
+deploy() {
+    local env="$1"
+    local branch="$2"
+
+    echo "Deploying branch $branch to $env"
+    git checkout "$branch"
+    git pull
+    npm run build
+}
+
+deploy "production" "main"
+deploy "staging" "develop"
+```
+
+### Local Variables
+
+By default, variables in functions are global. Use `local` to restrict a variable's scope to the function:
+
+```bash
+my_function() {
+    local temp="inside function"
+    echo "$temp"
+}
+
+my_function
+echo "$temp"    # empty — local variable is not visible here
+```
+
+Without `local`, `temp` would be visible (and modifiable) throughout the rest of the script.
+
+### Return Values
+
+Functions use `return` to set an exit code (0-255). They do not "return" a value in the way that functions in most programming languages do.
+
+```bash
+is_even() {
+    if [ $(($1 % 2)) -eq 0 ]; then
+        return 0    # success = true
+    else
+        return 1    # failure = false
+    fi
+}
+
+if is_even 4; then
+    echo "4 is even"
+fi
+```
+
+To return actual data from a function, the function writes to stdout and the caller captures it with command substitution:
+
+```bash
+get_timestamp() {
+    date +%Y-%m-%d_%H-%M-%S
+}
+
+filename="backup_$(get_timestamp).tar.gz"
+echo "$filename"
+# backup_2024-01-15_14-30-45.tar.gz
+```
+
+---
+
+## Arithmetic
+
+The shell treats everything as strings by default. For arithmetic, you need special syntax.
+
+### $(( )) — Arithmetic Expansion
+
+```bash
+a=5
+b=3
+echo $((a + b))     # 8
+echo $((a * b))     # 15
+echo $((a / b))     # 1  (integer division)
+echo $((a % b))     # 2  (modulo)
+echo $((a ** 2))    # 25 (exponentiation)
+```
+
+Note that inside `$(( ))`, you do not need the `$` prefix on variable names.
+
+### Incrementing
+
+```bash
+count=0
+count=$((count + 1))
+# or
+((count++))
+```
+
+---
+
+## Defensive Scripting: set Options
+
+By default, shell scripts are dangerously lenient. A command can fail and the script continues running as if nothing happened. These `set` options change that behavior.
+
+### set -e (Exit on Error)
+
+```bash
+#!/bin/bash
+set -e
+
+cd /nonexistent_directory   # this fails
+echo "This line never runs"  # the script exits on the previous line
+```
+
+Without `set -e`, the `cd` would fail but the script would continue executing the `echo` and every subsequent command, potentially in the wrong directory. This is a common source of data loss and corruption in scripts.
+
+`set -e` causes the script to immediately exit if any command returns a non-zero exit code.
+
+### set -u (Error on Unset Variables)
+
+```bash
+#!/bin/bash
+set -u
+
+echo "Home: $HOME"           # fine, HOME is set
+echo "Missing: $UNDEFINED"    # script exits with an error
+```
+
+Without `set -u`, referencing an unset variable silently expands to an empty string. This leads to subtle bugs:
+
+```bash
+rm -rf "$DEPLOY_DIR/"
+# If DEPLOY_DIR is unset, this becomes: rm -rf /
+# Which deletes everything on the system
+```
+
+With `set -u`, the script would error out instead of silently treating `$DEPLOY_DIR` as empty.
+
+### set -o pipefail
+
+```bash
+#!/bin/bash
+set -o pipefail
+
+curl https://api.example.com | jq '.data'
+```
+
+By default, a pipeline's exit code is the exit code of the **last** command. If `curl` fails but `jq` succeeds (because it receives an empty input and outputs `null`), the pipeline reports success. With `pipefail`, the pipeline's exit code is the exit code of the rightmost command that failed. Now if `curl` fails, the pipeline fails.
+
+### The Standard Header
+
+Most robust shell scripts start with:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+```
+
+This is shorthand for `set -e`, `set -u`, and `set -o pipefail` all at once. It means:
+
+- Exit immediately if any command fails
+- Exit if any unset variable is referenced
+- A pipeline fails if any command in it fails
+
+---
+
+## Traps
+
+A trap is a way to run cleanup code when the script exits or receives a signal. Without traps, if a script creates temporary files and then gets interrupted by `Ctrl+C`, those temporary files are left behind.
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+tmpfile=$(mktemp)
+
+cleanup() {
+    rm -f "$tmpfile"
+    echo "Cleaned up temporary file"
+}
+
+trap cleanup EXIT
+
+echo "Working with $tmpfile..."
+echo "some data" > "$tmpfile"
+# do more work...
+
+# When the script exits (normally or due to error), cleanup runs automatically
+```
+
+### How Traps Work
+
+The `trap` command takes two arguments: a command (or function name) to execute, and a signal (or the special word `EXIT`).
+
+```bash
+trap 'echo "Interrupted!"' INT        # run on Ctrl+C (SIGINT)
+trap 'echo "Terminated!"' TERM        # run on SIGTERM
+trap 'echo "Exiting!"' EXIT           # run on any exit (normal or error)
+trap 'echo "Error on line $LINENO"' ERR  # run when a command fails
+```
+
+`EXIT` is the most useful. It fires no matter how the script ends: normal completion, `exit` command, error with `set -e`, or signal. It is the shell equivalent of a `finally` block.
+
+### Practical Trap Pattern
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+
+cd "$workdir"
+git clone "$REPO_URL" .
+npm install
+npm run build
+cp -r dist/* /var/www/html/
+
+# even if any command above fails, the temp directory is deleted
+```
+
+### Trapping Multiple Signals
+
+```bash
+trap 'echo "Cleaning up..."; rm -f /tmp/lockfile' EXIT INT TERM
+```
+
+This runs the cleanup on normal exit, `Ctrl+C`, and SIGTERM.
+
+---
+
+## Putting It Together
+
+Here is a complete, real-world script that demonstrates most of the concepts covered in this document:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+readonly REQUIRED_TOOLS="git npm node"
+readonly LOG_FILE="/tmp/deploy_$(date +%Y%m%d_%H%M%S).log"
+
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo "Deployment failed. Check log: $LOG_FILE"
+    fi
+    # any other cleanup
+}
+trap cleanup EXIT
+
+log() {
+    echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG_FILE"
+}
+
+check_tools() {
+    for tool in $REQUIRED_TOOLS; do
+        if ! command -v "$tool" > /dev/null 2>&1; then
+            log "Required tool not found: $tool"
+            exit 1
+        fi
+    done
+    log "All required tools found"
+}
+
+main() {
+    if [[ $# -lt 1 ]]; then
+        echo "Usage: $0 <environment> [branch]"
+        echo "  environment: staging or production"
+        echo "  branch: git branch to deploy (default: main)"
+        exit 1
+    fi
+
+    local env="$1"
+    local branch="${2:-main}"
+
+    if [[ "$env" != "staging" && "$env" != "production" ]]; then
+        log "Invalid environment: $env"
+        exit 1
+    fi
+
+    check_tools
+
+    log "Deploying branch '$branch' to '$env'"
+    git checkout "$branch" >> "$LOG_FILE" 2>&1
+    git pull origin "$branch" >> "$LOG_FILE" 2>&1
+
+    log "Installing dependencies..."
+    npm ci >> "$LOG_FILE" 2>&1
+
+    log "Building..."
+    NODE_ENV="$env" npm run build >> "$LOG_FILE" 2>&1
+
+    log "Deployment to $env complete"
+}
+
+main "$@"
+```
+
+This script validates arguments, checks for required tools, logs output, handles errors gracefully, and cleans up on failure. The `${2:-main}` syntax means "use `$2` if provided, otherwise default to `main`."
