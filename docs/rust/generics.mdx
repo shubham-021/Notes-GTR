@@ -1,0 +1,189 @@
+---
+title: Generics
+description: Generic functions, trait bounds, generic structs, generic traits, and impl Trait syntax
+---
+
+## Generic Functions
+
+Generics let you write functions and data structures that work with many different types instead of a single concrete one. The type parameter goes in angle brackets after the function name:
+
+```rust
+fn pick<T>(cond: bool, left: T, right: T) -> T {
+    if cond { left } else { right }
+}
+
+println!("{:?}", pick(true, 222, 333));
+println!("{:?}", pick(true, 'L', 'R'));
+```
+
+Rust figures out what `T` is from the arguments you pass. When you call `pick(true, 222, 333)`, `T` becomes `i32`. When you call `pick(true, 'L', 'R')`, `T` becomes `char`. This also works with your own types:
+
+```rust
+#[derive(Debug)]
+struct Foo {
+    val: u8,
+}
+
+println!("{:?}", pick(false, Foo { val: 7 }, Foo { val: 99 }));
+```
+
+## Trait Bounds
+
+A generic type parameter on its own is completely unconstrained. Often you need the type to support certain operations. Trait bounds let you require that a type implements a particular trait:
+
+```rust
+fn duplicate<T: Clone>(a: T) -> (T, T) {
+    (a.clone(), a.clone())
+}
+```
+
+`T: Clone` is a trait bound. It reads as: "T must be a type that implements `Clone`." Without this bound, calling `a.clone()` inside the function would be a compile error, because Rust wouldn't know that `T` has a `clone` method.
+
+```rust
+let foo = String::from("foo");
+let pair = duplicate(foo);
+println!("{pair:?}"); // ("foo", "foo")
+```
+
+If you tried to pass a type that doesn't implement `Clone`, the compiler would reject it:
+
+```rust
+struct NotCloneable;
+let pair = duplicate(NotCloneable); // error: Clone is not implemented for NotCloneable
+```
+
+## Generic Structs
+
+Generics can also be used in struct definitions. This is particularly useful when you want a struct to wrap or contain a value whose concrete type can vary.
+
+Consider a logging system. You might start with a concrete logger:
+
+```rust
+trait Logger {
+    fn log(&self, verbosity: u8, message: &str);
+}
+
+struct StderrLogger;
+
+impl Logger for StderrLogger {
+    fn log(&self, verbosity: u8, message: &str) {
+        eprintln!("verbosity={verbosity}: {message}");
+    }
+}
+```
+
+Now suppose you want a filter that suppresses messages above a certain verbosity level. You could hardcode `StderrLogger` as the inner type, but then the filter only works with that one logger. A generic parameter solves this:
+
+```rust
+struct VerbosityFilter<L> {
+    max_verbosity: u8,
+    inner: L,
+}
+```
+
+You might wonder why the field type isn't just `Logger` directly. The reason is that `Logger` is a trait, not a concrete type. A trait describes capabilities but doesn't tell Rust the exact size or layout of the value. A generic parameter `L` stands in for a specific concrete type that the compiler resolves at compile time.
+
+To make `VerbosityFilter` itself behave as a logger, you implement the trait for it with a bound on `L`:
+
+```rust
+impl<L: Logger> Logger for VerbosityFilter<L> {
+    fn log(&self, verbosity: u8, message: &str) {
+        if verbosity <= self.max_verbosity {
+            self.inner.log(verbosity, message);
+        }
+    }
+}
+```
+
+Reading `impl<L: Logger> Logger for VerbosityFilter<L>` piece by piece:
+
+- `impl<L: Logger>` — for any type `L` that implements `Logger`
+- `Logger for VerbosityFilter<L>` — `VerbosityFilter<L>` also implements `Logger`
+
+So for any logger type, wrapping it in `VerbosityFilter` gives you another logger that filters by verbosity:
+
+```rust
+let logger = VerbosityFilter {
+    max_verbosity: 3,
+    inner: StderrLogger,
+};
+logger.log(5, "FYI");   // suppressed (5 > 3)
+logger.log(2, "Uhoh");  // printed
+```
+
+## Generic Traits
+
+Traits themselves can also have type parameters. The parameter gets a concrete type when the trait is implemented:
+
+```rust
+trait MyFrom<T>: Sized {
+    fn myfrom(value: T) -> Self;
+}
+```
+
+A single type can implement the same generic trait multiple times with different type arguments:
+
+```rust
+#[derive(Debug)]
+struct Foo(String);
+
+impl MyFrom<u32> for Foo {
+    fn myfrom(from: u32) -> Foo {
+        Foo(format!("Converted from integer: {from}"))
+    }
+}
+
+impl MyFrom<bool> for Foo {
+    fn myfrom(from: bool) -> Foo {
+        Foo(format!("Converted from bool: {from}"))
+    }
+}
+
+dbg!(Foo::myfrom(123));   // Foo("Converted from integer: 123")
+dbg!(Foo::myfrom(true));  // Foo("Converted from bool: true")
+```
+
+This is how the standard library's `From` trait works. Types like `String` implement `From<&str>`, `From<Vec<u8>>`, and others, each providing a different conversion path.
+
+## impl Trait
+
+The `impl Trait` syntax can be used in function arguments and return types as a shorthand for generics.
+
+In argument position, `impl Trait` is syntactic sugar for a generic with a trait bound:
+
+```rust
+fn add_42_millions(x: impl Into<i32>) -> i32 {
+    x.into() + 42_000_000
+}
+```
+
+This is equivalent to:
+
+```rust
+fn add_42_millions<T: Into<i32>>(x: T) -> i32 {
+    x.into() + 42_000_000
+}
+```
+
+Both say the same thing: the caller can pass any type that implements `Into<i32>`.
+
+```rust
+let many = add_42_millions(42_i8);
+dbg!(many); // 42000042
+
+let many_more = add_42_millions(10_000_000);
+dbg!(many_more); // 52000000
+```
+
+In return position, `impl Trait` means "this function returns some concrete type that implements the trait, but I'm not telling you which one":
+
+```rust
+fn pair_of(x: u32) -> impl std::fmt::Debug {
+    (x + 1, x - 1)
+}
+
+let debuggable = pair_of(27);
+dbg!(debuggable); // (28, 26)
+```
+
+The caller knows the return value implements `Debug`, but doesn't know (or need to know) that it's specifically a `(u32, u32)` tuple. This is useful when the concrete return type is complex or when you want to keep it as an implementation detail.

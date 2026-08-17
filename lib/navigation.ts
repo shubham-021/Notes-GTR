@@ -68,6 +68,11 @@ export const navigation: NavSection[] = [
             { title: "Methods & Impl", slug: "rust/methods-and-impl" },
             { title: "Traits", slug: "rust/traits" },
             { title: "Modules & Project Structure", slug: "rust/modules-and-project-structure" },
+            { title: "Generics", slug: "rust/generics" },
+            { title: "Trait Objects", slug: "rust/trait-objects" },
+            { title: "Closures", slug: "rust/closures" },
+            { title: "Ownership & Memory", slug: "rust/ownership-and-memory" },
+            { title: "Smart Pointers", slug: "rust/smart-pointers" },
         ],
     },
     {

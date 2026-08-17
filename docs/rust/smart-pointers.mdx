@@ -1,0 +1,221 @@
+---
+title: Smart Pointers
+description: Box, Rc, Weak, Arc, Mutex, and shared ownership patterns
+---
+
+## Box
+
+`Box<T>` is an owned pointer to data on the heap. It allocates memory on the heap, places the value there, and stores a pointer on the stack:
+
+```rust
+let five = Box::new(5);
+println!("five: {}", *five);
+```
+
+```
+Stack          Heap
+five ────────► 5
+```
+
+`Box<T>` implements `Deref<Target = T>`, which means you can call methods from `T` directly on a `Box<T>` without explicit dereferencing.
+
+### Recursive Types
+
+One of the most important uses of `Box` is enabling recursive data types. A type that contains itself directly would have infinite size, which Rust can't allow. `Box` provides the indirection needed to give the type a known size:
+
+```rust
+#[derive(Debug)]
+enum List<T> {
+    Element(T, Box<List<T>>),
+    Nil,
+}
+
+let list = List::Element(1, Box::new(List::Element(2, Box::new(List::Nil))));
+println!("{list:?}");
+```
+
+```
+Stack                              Heap
+list
+Element(1, ptr) ──────────► Element(2, ptr) ──────► Nil
+```
+
+Without `Box`, embedding `List` inside `List` would make the compiler unable to compute a fixed size. `Box` solves this because a pointer always has a known size, regardless of what it points to.
+
+### When to Use Box
+
+`Box` is useful when you have a type whose size can't be known at compile time, when you want to transfer ownership of a large value without copying all the data on the stack (only the pointer is moved), or when you need to build recursive data structures.
+
+Unlike a raw pointer, `Box` is guaranteed to be non-null. This enables the compiler to apply niche optimizations — for example, `Option<Box<T>>` is the same size as `Box<T>`, using the null pointer representation for `None`.
+
+## Rc
+
+`Rc<T>` (Reference Counted) is a smart pointer for shared ownership in single-threaded code. Multiple `Rc` pointers can refer to the same value, and the value is freed only when the last `Rc` is dropped:
+
+```rust
+use std::rc::Rc;
+
+let a = Rc::new(10);
+let b = Rc::clone(&a);
+
+println!("{a}"); // 10
+println!("{b}"); // 10
+```
+
+```
+Stack                 Heap
+a ──────────────────► strong: 2, value: 10
+b ──────────────┘
+```
+
+`Rc::clone` is cheap. It doesn't deep-copy the value; it just creates another pointer to the same allocation and increments the reference count. You can check the count with `Rc::strong_count(&a)`.
+
+When the last `Rc` disappears, the value is dropped and the memory is freed. `Rc` is not thread-safe — use `Arc` when you need shared ownership across threads.
+
+### Weak References
+
+`Weak<T>` is a non-owning reference to an `Rc`'s value. It doesn't prevent the value from being dropped:
+
+```rust
+use std::rc::{Rc, Weak};
+
+let strong = Rc::new(String::from("Hello"));
+let weak = Rc::downgrade(&strong);
+```
+
+`Rc::downgrade` creates a `Weak` pointer from an `Rc`. The allocation tracks two separate counts: a strong count (number of `Rc` pointers) and a weak count (number of `Weak` pointers). Only the strong count determines whether the value stays alive.
+
+Because a `Weak` doesn't guarantee the value still exists, you can't use it directly. You must call `upgrade()`, which returns an `Option<Rc<T>>`:
+
+```rust
+match weak.upgrade() {
+    Some(value) => println!("{value}"),
+    None => println!("value was dropped"),
+}
+```
+
+### Avoiding Reference Cycles
+
+The most important reason for `Weak` is preventing reference cycles. Consider two nodes that reference each other:
+
+```rust
+// If both directions use Rc:
+// a.next = Some(Rc::clone(&b));
+// b.prev = Some(Rc::clone(&a));
+```
+
+With both directions as `Rc`, the strong counts look like this:
+
+```
+NodeA: strong = 2 (variable a + NodeB's Rc)
+NodeB: strong = 2 (variable b + NodeA's Rc)
+```
+
+After `drop(a)`, NodeA's count goes from 2 to 1. After `drop(b)`, NodeB's count goes from 2 to 1. Neither reaches zero because each node still holds a strong reference to the other. The objects keep each other alive indefinitely — a memory leak.
+
+It's important to understand what `drop(a)` actually does here. It destroys the `Rc` handle stored in the variable `a`, not the heap object itself. The heap object is freed only when its strong reference count reaches zero. Since the other node still holds a strong `Rc`, the count stays at 1 and the object survives.
+
+The fix is to use `Weak` for one direction:
+
+```
+A ── Rc ──► B
+B ── Weak ──► A
+```
+
+Now B doesn't keep A alive. When the external `Rc` to A is dropped, A's strong count reaches zero and it's freed. This pattern is common in trees with parent pointers, doubly-linked lists, and graphs.
+
+## Arc
+
+`Arc<T>` (Atomically Reference Counted) is the thread-safe version of `Rc`. It works the same way but uses atomic operations for its reference count, making it safe to share across threads:
+
+```rust
+use std::sync::Arc;
+use std::thread;
+
+let x = Arc::new(42);
+let y = Arc::clone(&x);
+
+thread::spawn(move || {
+    println!("{y}");
+});
+```
+
+Multiple threads can own the same `Arc`. The atomic operations ensure the reference count stays consistent even under concurrent access.
+
+`Arc` does not make the inner data mutable. If you need to mutate shared data across threads, you need an additional synchronization primitive.
+
+## Mutex
+
+`Mutex<T>` (mutual exclusion) allows only one thread at a time to access the protected value:
+
+```rust
+use std::sync::Mutex;
+
+let data = Mutex::new(10);
+let mut guard = data.lock().unwrap();
+*guard += 1;
+// lock is automatically released when `guard` goes out of scope
+```
+
+`lock()` returns a guard. While the guard exists, you have exclusive access to the inner value. When the guard is dropped (goes out of scope), the lock is automatically released.
+
+## Arc and Mutex Together
+
+These two solve different problems:
+
+- `Arc` — how can multiple threads own the same value?
+- `Mutex` — how can those threads safely mutate that value?
+
+Together, `Arc<Mutex<T>>` gives you shared mutable state across threads:
+
+```rust
+use std::sync::{Arc, Mutex};
+
+let counter = Arc::new(Mutex::new(0));
+let c = Arc::clone(&counter);
+
+let handle = std::thread::spawn(move || {
+    let mut value = c.lock().unwrap();
+    *value += 1;
+});
+
+handle.join().unwrap();
+println!("{}", *counter.lock().unwrap()); // 1
+```
+
+Each thread gets its own `Arc` clone (shared ownership) and calls `lock()` to get exclusive mutable access to the inner value.
+
+## Clone-on-Write with Rc
+
+`Rc::make_mut` provides clone-on-write behavior. If the `Rc` is the only reference, it mutates the value in place. If the value is shared, it clones first:
+
+```rust
+use std::rc::Rc;
+
+let mut x = Rc::new(String::from("Hello"));
+let y = Rc::clone(&x);
+
+Rc::make_mut(&mut x).push_str(" world");
+```
+
+Before `make_mut`, both `x` and `y` point to the same `"Hello"`. Since there are multiple strong references, `make_mut` clones the value before mutating it, so `y` is unaffected:
+
+```
+Before:
+  x ──┬──► "Hello"
+  y ──┘
+
+After:
+  x ──────► "Hello world"
+  y ──────► "Hello"
+```
+
+If `x` were the only reference, no clone would be needed:
+
+```rust
+let mut x = Rc::new(String::from("Hello"));
+Rc::make_mut(&mut x).push_str(" world");
+// x → "Hello world", no clone occurred
+```
+
+This is a useful pattern when you want to defer cloning until a mutation actually requires it.

@@ -1,0 +1,194 @@
+---
+title: Ownership and Memory
+description: Stack and heap allocation, ownership, move semantics, Clone, Copy, and Drop
+---
+
+## Stack and Heap
+
+Programs allocate memory in two regions:
+
+**Stack** — a continuous area of memory for local variables. Values on the stack have fixed sizes known at compile time. Allocation is extremely fast (just moving a stack pointer), deallocation is automatic when a function returns, and data benefits from strong memory locality.
+
+**Heap** — storage for values whose size isn't known until runtime, or that need to outlive the function that created them. Allocation is slower because the allocator must find a suitable block of free memory, and there's no guarantee of locality.
+
+Many types use both. A `String`, for example, stores fixed-size metadata (pointer, length, capacity) on the stack, and the actual character data on the heap:
+
+```rust
+let s = String::from("Hello");
+```
+
+```
+Stack              Heap
+s
+├─ ptr  ────────►  [ H | e | l | l | o ]
+├─ len: 5
+└─ capacity: 5
+```
+
+## Approaches to Memory Management
+
+Languages have traditionally fallen into two camps:
+
+**Manual management** (C, C++) — the programmer decides when to allocate and free heap memory. This gives full control but is error-prone: forgetting to free memory causes leaks, freeing it twice causes corruption, and using a pointer after freeing causes undefined behavior.
+
+**Automatic management** (Java, Python, Go) — a runtime system like a garbage collector identifies memory that is no longer reachable and frees it. This is safe but comes with runtime overhead and can be difficult to tune.
+
+Rust takes a different approach: full control and safety through compile-time enforcement. The compiler tracks ownership and lifetimes, ensuring memory is freed exactly when it should be, with no runtime cost. When required, tools like reference counting are also available.
+
+## Ownership
+
+Every value in Rust has exactly one owner. When the owner goes out of scope, the value is dropped and its memory is freed:
+
+```rust
+struct Point(i32, i32);
+
+{
+    let p = Point(2, 3);
+    println!("{}", p.0);
+}
+// p is dropped here, memory is freed
+```
+
+## Move Semantics
+
+Assigning a value to another variable transfers ownership. The original variable becomes invalid:
+
+```rust
+let s1 = String::from("Hello");
+let s2 = s1;
+// println!("{s1}"); // error: value has been moved
+println!("{s2}");
+```
+
+After the move, `s1` is inaccessible. Only `s2` owns the data. When `s2` goes out of scope, the string is freed. Nothing happens when `s1` goes out of scope because it no longer owns anything.
+
+```
+Before move:
+  s1.ptr ──────► [ H | e | l | l | o ]
+
+After move:
+  s1 (inaccessible)
+  s2.ptr ──────► [ H | e | l | l | o ]
+```
+
+The heap data doesn't move. Only the stack metadata is copied, and the old variable is invalidated.
+
+Passing a value to a function also moves ownership:
+
+```rust
+fn say_hello(name: String) {
+    println!("Hello {name}");
+}
+
+let name = String::from("Arka");
+say_hello(name);
+// println!("{name}"); // error: name has been moved
+```
+
+After calling `say_hello(name)`, the function owns the string. It will be freed at the end of the function body. If you need to keep using the value, you can either pass a reference (`&name`) or pass a clone (`name.clone()`).
+
+Rust makes move semantics the default to prevent accidental copies of large data. If you want a copy, you have to be explicit about it.
+
+## Clone
+
+The `Clone` trait provides explicit deep copying. When you clone a value, you get an independent copy with its own allocation:
+
+```rust
+fn say_hi(name: String) {
+    println!("Hi {name}");
+}
+
+let name = String::from("Arka");
+say_hi(name.clone()); // passes a clone, name is still valid
+say_hi(name);          // moves name, now it's gone
+```
+
+`clone()` generally performs a deep copy. For a `String`, this means allocating new heap memory and copying all the character data. For an array, every element is cloned. Custom types can implement `Clone` to define their own cloning behavior.
+
+## Copy
+
+Some types are so simple and cheap to duplicate that Rust copies them automatically instead of moving. These types implement the `Copy` trait:
+
+```rust
+let x = 42;
+let y = x;
+println!("{x}"); // works: i32 implements Copy
+println!("{y}");
+```
+
+After `let y = x`, both `x` and `y` independently own their own copy of the value `42`. No move occurs.
+
+You can opt your own types into `Copy`:
+
+```rust
+#[derive(Debug, Clone, Copy)]
+struct Point(i32, i32);
+
+let p1 = Point(3, 4);
+let p2 = p1;
+println!("p1: {p1:?}"); // works
+println!("p2: {p2:?}");
+```
+
+`Copy` is a bitwise copy of memory. It has some important constraints:
+
+- `Copy` requires `Clone` (every `Copy` type must also be `Clone`)
+- `Copy` does not allow custom logic, it's always a simple bit-for-bit duplicate
+- A type cannot implement both `Copy` and `Drop`
+- A type can only derive `Copy` if all of its fields are also `Copy`
+
+That last point means types containing heap-allocated data like `String` cannot be `Copy`:
+
+```rust
+#[derive(Clone, Debug)]
+struct NamedPoint(i32, i32, String);
+// Cannot derive Copy: String is not Copy
+```
+
+This type can still derive `Clone` for explicit deep copies, but assignment will always be a move:
+
+```rust
+let np1 = NamedPoint(5, 6, String::from("origin"));
+let np2 = np1;
+// println!("{np1:?}"); // error: np1 has been moved
+```
+
+## Drop
+
+The `Drop` trait lets you run custom cleanup code when a value goes out of scope. This is how Rust handles resource cleanup for things like file handles, network connections, or locks:
+
+```rust
+struct Droppable {
+    name: &'static str,
+}
+
+impl Drop for Droppable {
+    fn drop(&mut self) {
+        println!("Dropping {}", self.name);
+    }
+}
+
+let a = Droppable { name: "a" };
+{
+    let b = Droppable { name: "b" };
+    {
+        let c = Droppable { name: "c" };
+        let d = Droppable { name: "d" };
+        println!("Exiting innermost block");
+    } // d dropped, then c dropped
+    println!("Exiting next block");
+} // b dropped
+drop(a); // explicitly dropped early
+println!("Exiting function");
+```
+
+Values are dropped in reverse order of creation within a scope. When a value is dropped, Rust calls its `Drop::drop` implementation (if it has one), then drops all of its fields.
+
+### std::mem::drop vs Drop::drop
+
+These are related but distinct:
+
+- `Drop::drop` is the method you implement on your type. It receives `&mut self` (not `self`) to avoid infinite recursion.
+- `std::mem::drop` is a standalone function that takes ownership of any value. It's simply an empty function: it does nothing except take ownership, which causes the value to be dropped at the end of the function's scope.
+
+`std::mem::drop` is a convenient way to drop a value before it would naturally go out of scope. This is useful for releasing resources early, like unlocking a mutex or closing a file before the end of a block.

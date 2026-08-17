@@ -1,0 +1,199 @@
+---
+title: Closures
+description: Closure syntax, capturing variables, move closures, and the Fn, FnMut, and FnOnce traits
+---
+
+## Closure Syntax
+
+A closure is an anonymous function you can define inline. It uses `| |` for parameters instead of `( )`:
+
+```rust
+let double = |n: i32| -> i32 {
+    n * 2
+};
+
+dbg!(double(10)); // 20
+```
+
+The general form is `|parameters| -> ReturnType { body }`. For simple single-expression closures, you can drop the braces and the return type:
+
+```rust
+let add_1 = |n: i32| n + 1;
+let add = |a: i32, b: i32| a + b;
+```
+
+Closures are used heavily with iterators:
+
+```rust
+let numbers = vec![1, 2, 3];
+let result: Vec<i32> = numbers.iter().map(|n| n * 2).collect();
+dbg!(result); // [2, 4, 6]
+```
+
+Here Rust infers both the type of `n` and the return type from the surrounding context, so neither needs to be written out.
+
+## Capturing Variables
+
+Unlike regular functions, closures can capture variables from the scope where they are defined:
+
+```rust
+let max_value = 5;
+let clamp = |v| {
+    if v > max_value { max_value } else { v }
+};
+
+dbg!(clamp(3)); // 3
+dbg!(clamp(9)); // 5
+```
+
+`max_value` was never passed as an argument, but the closure captured it from the enclosing scope. By default, Rust captures variables by reference. Here `clamp` holds an immutable borrow of `max_value`.
+
+Rust decides how to capture a variable based on what the closure does with it. There are three capture modes:
+
+**By shared reference (`&T`)** — when the closure only reads the variable:
+
+```rust
+let x = 10;
+let print_x = || {
+    println!("{x}");
+};
+```
+
+**By mutable reference (`&mut T`)** — when the closure modifies the variable:
+
+```rust
+let mut x = 10;
+let mut add_to_x = || {
+    x += 1;
+};
+```
+
+**By value (`T`)** — when the closure consumes the variable:
+
+```rust
+let name = String::from("hello");
+let consume = || {
+    drop(name);
+};
+```
+
+### Mutable Captures and Borrowing Rules
+
+Rust's borrowing rules apply to closures just as they do everywhere else. If a closure holds an immutable borrow of a variable, you cannot mutate that variable while the closure is still in use:
+
+```rust
+let mut max_value = 5;
+let clamp = |v| {
+    if v > max_value { max_value } else { v }
+};
+
+max_value = 3;   // error: cannot assign to `max_value` because it is borrowed
+dbg!(clamp(7));
+```
+
+The closure borrows `max_value` immutably. Assigning to `max_value` while that borrow is still active violates Rust's rule that you cannot mutate something while an immutable borrow of it exists.
+
+When a closure captures something mutably, both the captured variable and the closure variable itself must be declared `mut`:
+
+```rust
+let mut count = 0;
+let mut increment = || {
+    count += 1;
+};
+increment();
+increment();
+```
+
+`let mut count` allows `count` to be mutated. `let mut increment` allows the closure to be called, because calling a closure that mutates its captures requires mutable access to the closure itself.
+
+## Move Closures
+
+By default, closures borrow their captured variables. With `move`, the closure takes ownership instead:
+
+```rust
+let name = String::from("hello");
+let closure = move || {
+    println!("{name}");
+};
+```
+
+Without `move`, the closure would borrow `name`, and you could still use `name` afterward:
+
+```rust
+let name = String::from("hello");
+let closure = || {
+    println!("{name}");
+};
+println!("{name}"); // works: closure only borrows name
+```
+
+With `move`, ownership transfers into the closure when the closure is created, not when it is called:
+
+```rust
+let name = String::from("hello");
+let closure = move || {
+    println!("{name}");
+};
+// println!("{name}"); // error: name has been moved into the closure
+```
+
+Think of it as: without `move`, the closure holds a reference pointing back to `name`. With `move`, `name` is moved into the closure and the outer scope no longer owns it.
+
+`move` closures are essential when a closure needs to outlive the scope it was created in, which is common when spawning threads or returning closures from functions.
+
+## Closure Traits
+
+Closures have anonymous types that cannot be named directly. Instead, Rust describes what a closure can do through three traits that correspond to the three capture modes:
+
+- `Fn` — the closure only reads its captures (or captures nothing). It can be called repeatedly.
+- `FnMut` — the closure modifies its captures. It can be called repeatedly, but requires mutable access.
+- `FnOnce` — the closure consumes its captures. It can only be called once.
+
+An `Fn` closure only reads:
+
+```rust
+let name = String::from("Arka");
+let print_name = || {
+    println!("{name}");
+};
+print_name();
+print_name(); // works: nothing is consumed
+```
+
+An `FnMut` closure modifies:
+
+```rust
+let mut count = 0;
+let mut increment = || {
+    count += 1;
+};
+increment();
+increment(); // works: state is modified, not consumed
+```
+
+The closure itself needs `mut` because calling an `FnMut` closure may mutate its captured state.
+
+An `FnOnce` closure consumes:
+
+```rust
+let name = String::from("Arka");
+let consume_name = || {
+    drop(name);
+};
+consume_name();
+// consume_name(); // error: closure has already consumed `name`
+```
+
+After the first call, `name` has been dropped. The closure can't be called again because there's nothing left to consume.
+
+### The Hierarchy
+
+These three traits form a hierarchy:
+
+```
+Fn ⊂ FnMut ⊂ FnOnce
+```
+
+Every `Fn` closure is also an `FnMut` and an `FnOnce`. Every `FnMut` closure is also an `FnOnce`. But the reverse is not true: an `FnOnce` closure is not necessarily `FnMut`, and an `FnMut` closure is not necessarily `Fn`.
+
+This means a function that accepts `FnOnce` can take any closure, while a function that requires `Fn` is the most restrictive and only accepts closures that don't modify or consume their captures.

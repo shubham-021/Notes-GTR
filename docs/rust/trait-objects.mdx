@@ -1,0 +1,130 @@
+---
+title: Trait Objects
+description: Static dispatch, dynamic dispatch, vtables, fat pointers, and owned trait objects
+---
+
+## Static Dispatch
+
+When you use `&impl Trait` in a function signature, the compiler generates a separate copy of the function for each concrete type it's called with. This is called static dispatch, because the correct method implementation is resolved at compile time.
+
+```rust
+struct Dog {
+    name: String,
+    age: i8,
+}
+
+struct Cat {
+    lives: i8,
+}
+
+trait Pet {
+    fn talk(&self) -> String;
+}
+
+impl Pet for Dog {
+    fn talk(&self) -> String {
+        format!("Woof, my name is {}!", self.name)
+    }
+}
+
+impl Pet for Cat {
+    fn talk(&self) -> String {
+        String::from("Meow!")
+    }
+}
+
+fn greet(pet: &impl Pet) {
+    println!("Hello, who are you? {}", pet.talk());
+}
+
+let cat = Cat { lives: 9 };
+let dog = Dog { name: String::from("Fido"), age: 5 };
+greet(&cat);
+greet(&dog);
+```
+
+Behind the scenes, Rust generates two versions of `greet`:
+
+```
+greet::<Cat>(&cat) → Cat::talk()
+greet::<Dog>(&dog) → Dog::talk()
+```
+
+Each version calls the correct `talk()` directly. There's no runtime lookup involved.
+
+## Dynamic Dispatch
+
+With `&dyn Trait`, you tell Rust: "I don't care what the concrete type is, just give me something that implements this trait." The compiler produces a single version of the function, and the correct method is looked up at runtime.
+
+```rust
+fn greet_dynamic(pet: &dyn Pet) {
+    println!("Hello, who are you? {}", pet.talk());
+}
+
+greet_dynamic(&cat);
+greet_dynamic(&dog);
+```
+
+Unlike the generic version, Rust doesn't generate separate `greet_dynamic` functions for `Cat` and `Dog`. Instead, it uses a virtual method table (vtable) to figure out which `talk()` to call:
+
+```
+greet_dynamic(&cat) → dyn Pet → vtable → Cat::talk()
+greet_dynamic(&dog) → dyn Pet → vtable → Dog::talk()
+```
+
+A `dyn Trait` value is considered "type-erased" because the concrete type is no longer known at compile time.
+
+## Fat Pointers and Vtables
+
+Since different types can have different sizes, `dyn Pet` on its own has no known size. You can't store it directly on the stack. A `&dyn Pet` solves this by being a fat pointer: it carries two pieces of information instead of one.
+
+A regular reference like `&Dog` is a single pointer to the data. A `&dyn Pet` is a double-width pointer containing:
+
+- A pointer to the actual object (the `Dog` or `Cat` data)
+- A pointer to the vtable for that type's `Pet` implementation
+
+The vtable is a small lookup table that contains pointers to the concrete implementations of the trait's methods. When you call `pet.talk()` through a `&dyn Pet`, Rust follows the vtable pointer to find whether it should call `Dog::talk()` or `Cat::talk()`.
+
+## Owned Trait Objects
+
+Trait objects can also be used with smart pointers like `Box` to create owned trait objects. This is how you build collections that contain different concrete types.
+
+A `Vec<T>` normally holds elements of a single concrete type. You can't do `vec![cat, dog]` because `Cat` and `Dog` are different types with different sizes. But you can use `Box<dyn Pet>`:
+
+```rust
+let pets: Vec<Box<dyn Pet>> = vec![
+    Box::new(Cat { lives: 9 }),
+    Box::new(Dog { name: String::from("Fido"), age: 5 }),
+];
+
+for pet in &pets {
+    println!("Hello, who are you? {}", pet.talk());
+}
+```
+
+Each `Box<dyn Pet>` is a fixed-size fat pointer on the heap, regardless of whether the underlying type is a `Cat` or a `Dog`. The vector stores these uniform pointers, and each one knows how to find its own vtable for dispatch.
+
+`Box` is needed here because `dyn Pet` doesn't have a known size at compile time. `Box<dyn Pet>` gives Rust a known-size pointer that points to the actual object on the heap:
+
+```
+Vec<Box<dyn Pet>>
+     ├─ Box → Cat { lives: 9 }
+     └─ Box → Dog { name: "Fido", age: 5 }
+```
+
+You can verify the size difference at runtime:
+
+```rust
+println!("Dog: {}", std::mem::size_of::<Dog>());         // size of Dog's fields
+println!("Cat: {}", std::mem::size_of::<Cat>());          // size of Cat's fields
+println!("&Dog: {}", std::mem::size_of::<&Dog>());        // single pointer
+println!("&dyn Pet: {}", std::mem::size_of::<&dyn Pet>()); // fat pointer (2x)
+```
+
+`&dyn Pet` is twice the size of a regular reference because it carries the extra vtable pointer.
+
+## When to Use Which
+
+Static dispatch (`impl Trait` or generics) is the default choice. It produces faster code because method calls are resolved at compile time and can be inlined. The trade-off is that the compiler generates a separate copy of the function for each type, which can increase binary size.
+
+Dynamic dispatch (`dyn Trait`) is useful when you need to work with multiple concrete types through a single interface at runtime, like storing different types in the same collection or returning different types from a function based on runtime conditions. The trade-off is a small runtime cost for the vtable lookup.
