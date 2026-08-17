@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { Menu, X, ChevronDown } from "lucide-react";
+import { Menu, X, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { navigation } from "@/lib/navigation";
 import { useTheme } from "@/lib/theme-context";
+import { useSidebar } from "@/lib/sidebar-context";
 import { cn } from "@/lib/utils";
 
 interface CollapsibleSectionProps {
@@ -33,7 +34,7 @@ function CollapsibleSection({ title, items, pathname, theme, onLinkClick }: Coll
                 onClick={() => setIsExpanded(!isExpanded)}
                 className={cn(
                     "w-full flex items-center justify-between mb-2 pl-3 pr-2 py-1 border-l-2 border-emerald-500 uppercase"
-                    ,"tracking-widest text-sm font-extrabold transition-colors cursor-pointer rounded-r-md",
+                    , "tracking-widest text-sm font-extrabold transition-colors cursor-pointer rounded-r-md",
                     theme === "dark"
                         ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                         : "text-zinc-500 hover:text-zinc-700 hover:bg-[#e6dec9]/50"
@@ -89,10 +90,14 @@ function CollapsibleSection({ title, items, pathname, theme, onLinkClick }: Coll
     );
 }
 
+const SIDEBAR_WIDTH = 256; // 16rem = 256px (w-64)
+const COLLAPSED_RAIL_WIDTH = 20; // 20px dashed line from left
+
 export function Sidebar() {
     const pathname = usePathname();
     const { theme } = useTheme();
-    const [isOpen, setIsOpen] = useState(false);
+    const [isOpen, setIsOpen] = useState(false); // mobile
+    const { isCollapsed, toggleCollapse } = useSidebar(); // desktop
 
     const closeSidebar = () => setIsOpen(false);
 
@@ -120,8 +125,11 @@ export function Sidebar() {
         </>
     );
 
+    const dashedBorderColor = theme === "dark" ? "#3f3f46" : "#d4d4d8";
+
     return (
         <>
+            {/* Mobile hamburger */}
             <button
                 onClick={() => setIsOpen(true)}
                 className={cn(
@@ -135,17 +143,67 @@ export function Sidebar() {
                 <Menu className={cn("w-5 h-5", theme === "dark" ? "text-white" : "text-(--paper-text)")} />
             </button>
 
-            <aside className={cn(
-                "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col border-r transition-colors duration-200",
-                theme === "dark"
-                    ? "border-zinc-800 bg-zinc-950"
-                    : "border-zinc-200 bg-paper"
-            )}>
-                <div className="h-full overflow-y-auto overscroll-contain p-6">
-                    <SidebarContent />
-                </div>
-            </aside>
+            {/* Desktop sidebar — animated width */}
+            <motion.aside
+                initial={false}
+                animate={{
+                    width: isCollapsed ? COLLAPSED_RAIL_WIDTH : SIDEBAR_WIDTH,
+                }}
+                transition={{
+                    type: "spring",
+                    stiffness: 400,
+                    damping: 30,
+                }}
+                className={cn(
+                    "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:flex-col transition-colors duration-200"
+                )}
+                style={{
+                    borderRight: `1px dashed ${dashedBorderColor}`,
+                    backgroundColor: isCollapsed ? "transparent" : undefined,
+                }}
+            >
+                {/* Sidebar inner content — fades out when collapsed */}
+                <AnimatePresence>
+                    {!isCollapsed && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className={cn(
+                                "h-full overflow-y-auto overscroll-contain p-6",
+                                theme === "dark" ? "bg-zinc-950" : "bg-paper"
+                            )}
+                        >
+                            <SidebarContent />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
+                {/* Toggle button — sits on the right dashed border */}
+                <button
+                    onClick={toggleCollapse}
+                    className={cn(
+                        "absolute top-6 z-50",
+                        "flex items-center justify-center",
+                        "w-6 h-6 rounded-full cursor-pointer",
+                        "border-0 outline-none",
+                        "transition-colors duration-200",
+                        theme === "dark"
+                            ? "bg-zinc-950 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                            : "bg-paper text-(--paper-text) hover:bg-[#e6dec9]/50 hover:text-(--paper-text)"
+                    )}
+                    style={{
+                        right: -12, // center it on the dashed border (half of 24px)
+                        border: "none",
+                    }}
+                    aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                >
+                    <Menu className="w-3.5 h-3.5" />
+                </button>
+            </motion.aside>
+
+            {/* Mobile overlay sidebar */}
             <AnimatePresence>
                 {isOpen && (
                     <>
@@ -164,11 +222,14 @@ export function Sidebar() {
                             exit={{ x: "-100%" }}
                             transition={{ type: "spring", damping: 25, stiffness: 300 }}
                             className={cn(
-                                "fixed top-0 left-0 z-50 h-screen w-72 border-r lg:hidden transition-colors duration-200",
+                                "fixed top-0 left-0 z-50 h-screen w-72 lg:hidden transition-colors duration-200",
                                 theme === "dark"
-                                    ? "bg-zinc-950 border-zinc-800"
-                                    : "bg-paper border-zinc-200"
+                                    ? "bg-zinc-950"
+                                    : "bg-paper"
                             )}
+                            style={{
+                                borderRight: `1px dashed ${dashedBorderColor}`,
+                            }}
                         >
                             <div className="h-full overflow-y-auto overscroll-contain p-6">
                                 <button
