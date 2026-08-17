@@ -70,9 +70,22 @@ body {
   overflow-x: hidden;
 }
 
+/* Base theme colors for body to ensure rubber-banding and non-layout pages look correct */
+:root[data-theme="dark"] body {
+  background-color: #09090b;
+  /* zinc-950 */
+  color: #fff;
+}
+
+:root[data-theme="light"] body {
+  background-color: var(--paper-bg);
+  background-image: var(--paper-texture);
+  color: var(--paper-text);
+}
+
 /* Dark theme scrollbar */
 :root[data-theme="dark"] ::-webkit-scrollbar {
-  width: 8px;
+  width: 1px;
   height: 8px;
 }
 
@@ -86,12 +99,12 @@ body {
 }
 
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: #ababbc;
 }
 
 /* Light theme scrollbar */
 :root[data-theme="light"] ::-webkit-scrollbar {
-  width: 8px;
+  width: 1px;
   height: 8px;
 }
 
@@ -100,12 +113,45 @@ body {
 }
 
 :root[data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
-  border-radius: 4px;
+  background: #333335;
+  border-radius: 2px;
 }
 
 :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1aa;
+  background: #353537;
+}
+
+/* Sidebar scrollbar specific width - High specificity to override global theme */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 1px !important;
+  height: 5px !important;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+:root[data-theme="dark"] .sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #d5d5ec !important;
+  border-radius: 2px !important;
+}
+
+:root[data-theme="dark"] .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #d4d4d8 !important;
+}
+
+:root[data-theme="light"] .sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #52525b !important;
+  border-radius: 2px !important;
+}
+
+:root[data-theme="light"] .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #404042 !important;
+}
+
+.sidebar-scroll {
+  /* Firefox (auto, thin, or none) */
+  scrollbar-width: thin;
 }
 
 /* Dark theme prose (default) */

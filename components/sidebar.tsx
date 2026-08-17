@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { Menu, X, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Menu, X, ChevronDown } from "lucide-react";
 import { navigation } from "@/lib/navigation";
 import { useTheme } from "@/lib/theme-context";
 import { useSidebar } from "@/lib/sidebar-context";
@@ -125,7 +125,7 @@ export function Sidebar() {
         </>
     );
 
-    const dashedBorderColor = theme === "dark" ? "#3f3f46" : "#d4d4d8";
+    const dashedBorderColor = theme === "dark" ? "#3f3f46" : "#3d3629";
 
     return (
         <>
@@ -171,7 +171,7 @@ export function Sidebar() {
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.15 }}
                             className={cn(
-                                "h-full overflow-y-auto overscroll-contain p-6",
+                                "sidebar-scroll h-full overflow-y-auto overscroll-contain p-6",
                                 theme === "dark" ? "bg-zinc-950" : "bg-paper"
                             )}
                         >
@@ -231,7 +231,7 @@ export function Sidebar() {
                                 borderRight: `1px dashed ${dashedBorderColor}`,
                             }}
                         >
-                            <div className="h-full overflow-y-auto overscroll-contain p-6">
+                            <div className="sidebar-scroll h-full overflow-y-auto overscroll-contain p-6">
                                 <button
                                     onClick={closeSidebar}
                                     className={cn(
